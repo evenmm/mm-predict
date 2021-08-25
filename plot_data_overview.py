@@ -54,7 +54,7 @@ df_mprotein_and_dates = df[['nnid', 'Diagnosis date', 'Serum mprotein (SPEP)',
 #print(df_mprotein_and_dates.head(n=5))
 
 # For each patient (nnid), we make a figure and plot all the values
-plt.figure()
+fig, ax1 = plt.subplots()
 # Initialize nnid
 nnid = df_mprotein_and_dates.loc[1,['nnid']][0]
 for row_index in range(len(df_mprotein_and_dates)): # Set 10 to only print nr 1
@@ -71,20 +71,33 @@ for row_index in range(len(df_mprotein_and_dates)): # Set 10 to only print nr 1
         #print(nan_mask)
         #print(mprotein_levels[nan_mask])
         #print(dates[nan_mask])
-        plt.plot(dates[nan_mask], mprotein_levels[nan_mask], linestyle='', marker='o')
+        ax1.plot(dates[nan_mask], mprotein_levels[nan_mask], linestyle='', marker='o')
+        #plt.plot(dates[nan_mask], mprotein_levels[nan_mask], linestyle='', marker='o')
+
         # Add drug labeling
+        # Use start and end dates of treatment
+
+        #treat_starts = np.array("the sliced panda frame with start times")
+        #treat_durations = np.array("end - start") #[20, 200, 200]
+        #y_dummy = [0, 1, 2]
+
+        ax2 = ax1.twinx() 
+        ax2.set_ylabel("Treatment")
+        #plt.barh()
     else:
         # Save plot and initialize new figure with new nnid 
-        plt.title("Patient ID " + str(nnid))
-        plt.xlabel("Time (year)")
-        plt.ylabel("Serum Mprotein (g/L)")
+        ax1.set_title("Patient ID " + str(nnid))
+        ax1.set_xlabel("Time (year)")
+        ax1.set_ylabel("Serum Mprotein (g/L)")
         plt.savefig("./Mproteinplots/" + str(nnid) + ".png")
-        #plt.show()
+        plt.show()
+        plt.close()
         nnid = df_mprotein_and_dates.loc[row_index,['nnid']][0]
-        plt.figure()
+        fig, ax1 = plt.subplots()
 
-plt.title("Patient ID " + str(nnid))
-plt.xlabel("Time (year)")
-plt.ylabel("Serum Mprotein (g/L)")
+ax1.set_title("Patient ID " + str(nnid))
+ax1.set_xlabel("Time (year)")
+ax1.set_ylabel("Serum Mprotein (g/L)")
 plt.savefig("./Mproteinplots/" + str(nnid) + ".png")
-#plt.show()
+plt.show()
+plt.close()
