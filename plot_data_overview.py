@@ -57,30 +57,34 @@ df_mprotein_and_dates = df[['nnid', 'Diagnosis date', 'Serum mprotein (SPEP)',
 plt.figure()
 # Initialize nnid
 nnid = df_mprotein_and_dates.loc[1,['nnid']][0]
-for row_index in range(1):
+for row_index in range(len(df_mprotein_and_dates)): # Set 10 to only print nr 1
     # Check if it's the same patient:
     if (df_mprotein_and_dates.loc[row_index,['nnid']][0] == nnid):
         # If yes, then plot Mprotein values at corresponding dates
         dates = df_mprotein_and_dates.loc[row_index, ['Diagnosis date', 'Treatment start', 'Date of best response:', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
-        print(dates)
+        #print(dates)
         mprotein_levels = df_mprotein_and_dates.loc[row_index, ['Serum mprotein (SPEP)', 'Serum mprotein (SPEP) (g/l):', 'Serum mprotein:.1', 'Serum mprotein:.2', 'Serum mprotein:.3', 'Serum mprotein:.4', 'SerumMprotein']]
-        print(mprotein_levels)
+        #print(mprotein_levels)
 
         # Ignore missing data
         nan_mask = np.array(mprotein_levels.notna())
-        print(nan_mask)
-        print(mprotein_levels[nan_mask])
-        print(dates[nan_mask])
+        #print(nan_mask)
+        #print(mprotein_levels[nan_mask])
+        #print(dates[nan_mask])
         plt.plot(dates[nan_mask], mprotein_levels[nan_mask], linestyle='', marker='o')
-        plt.show()
-
         # Add drug labeling
     else:
         # Save plot and initialize new figure with new nnid 
-        plt.show()
-        plt.savefig(str(nnid) + ".png")
+        plt.title("Patient ID " + str(nnid))
+        plt.xlabel("Time (year)")
+        plt.ylabel("Serum Mprotein (g/L)")
+        plt.savefig("./Mproteinplots/" + str(nnid) + ".png")
+        #plt.show()
         nnid = df_mprotein_and_dates.loc[row_index,['nnid']][0]
         plt.figure()
 
-plt.show()
-plt.savefig(str(nnid) + ".png")
+plt.title("Patient ID " + str(nnid))
+plt.xlabel("Time (year)")
+plt.ylabel("Serum Mprotein (g/L)")
+plt.savefig("./Mproteinplots/" + str(nnid) + ".png")
+#plt.show()
