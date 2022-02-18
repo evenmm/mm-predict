@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import matplotlib.dates as mdates 
 from datetime import datetime
+from pandas import DataFrame
+import seaborn as sns
 years = mdates.YearLocator()   # every year
 months = mdates.MonthLocator()  # every month
 yearsFmt = mdates.DateFormatter('%Y')
@@ -45,8 +47,9 @@ raw_unique_treatments = pd.unique(df_mprotein_and_dates[['Drug 1', 'Drug 2', 'Dr
 nan_mask_treatments = ~isNaN(raw_unique_treatments)
 unique_treatments = raw_unique_treatments[nan_mask_treatments]
 drugkeys = range(len(unique_treatments))
-print("There are "+str(len(unique_treatments))+" unique treatments.")
-#print(unique_treatments)
+number_of_unique_drugs = len(unique_treatments)
+print("There are "+str(number_of_unique_drugs)+" unique treatments.")
+print(unique_treatments)
 treatment_dictionary = dict(zip(unique_treatments, drugkeys))
 print(treatment_dictionary)
 
@@ -227,3 +230,66 @@ if count_mprotein > 0 and count_treatments > 0:
     plt.savefig("./Mproteinplots/" + str(nnid) + ".png")
 #plt.show()
 plt.close()
+
+# Plot matrix of drug counts per patient
+# dictionary of drugs: treatment_dictionary = dict(zip(unique_treatments, drugkeys))
+unique_nnids = pd.unique(df_mprotein_and_dates[['nnid']].values.ravel('K'))
+print(unique_nnids)
+nnid_dict_keys = range(len(unique_nnids))
+nnid_dictionary = dict(zip(unique_nnids, nnid_dict_keys))
+number_of_nnids = len(unique_nnids)
+print("There are "+str(number_of_nnids)+" unique nnids.")
+#%matplotlib inline
+Index= unique_nnids
+Cols = unique_treatments
+drugmatrix = DataFrame(np.zeros((number_of_nnids,number_of_unique_drugs)), index=Index, columns=Cols)
+
+# Loop over rows. For each line, find the drug names, lookup in dict and update matrix 
+# Initialize nnid
+nnid = df_mprotein_and_dates.loc[1,['nnid']][0]
+nnid_key = nnid_dictionary[nnid] # The dataframe row index
+for row_index in range(len(df_mprotein_and_dates)):
+    # Check if it's the same patient.
+    if not (df_mprotein_and_dates.loc[row_index,['nnid']][0] == nnid):
+        nnid = df_mprotein_and_dates.loc[row_index,['nnid']][0]
+        nnid_key = nnid_dictionary[nnid] # The dataframe row index
+
+    # Find dates of treatment
+    treat_dates = np.array(df_mprotein_and_dates.loc[row_index, ['Start date', 'End date', 'Start date.1', 'End date.1']])
+
+    drug_interval_1 = treat_dates[0:2] # For the first drug combination
+    drugs_1 = np.array(df_mprotein_and_dates.loc[row_index, ['Drug 1', 'Drug 2', 'Drug 3', 'Drug 4']])
+    # Remove cases with missing end dates
+    missing_date_bool = isNaN(drug_interval_1).any()
+    if not missing_date_bool: 
+        # Remove nan drugs
+        drugs_1 = drugs_1[~isNaN(drugs_1)]
+        for ii in range(len(drugs_1)):
+            drugkey = treatment_dictionary[drugs_1[ii]]
+            #df.at['C', 'x'] = 10
+            drugmatrix.iloc[nnid_key,drugkey] = drugmatrix.iloc[nnid_key,drugkey] + 1 
+
+    drug_interval_2 = treat_dates[2:4] # For the second drug combination
+    drugs_2 = np.array(df_mprotein_and_dates.loc[row_index, ['Drug 1.1', 'Drug 2.1', 'Drug 3.1', 'Drug 4.1']])
+    # Remove cases with missing end dates
+    missing_date_bool = isNaN(drug_interval_2).any()
+    if not missing_date_bool: 
+        # Remove nan drugs
+        drugs_2 = drugs_2[~isNaN(drugs_2)]
+        for ii in range(len(drugs_2)):
+            drugkey = treatment_dictionary[drugs_2[ii]]
+            drugmatrix.iloc[nnid_key,drugkey] = drugmatrix.iloc[nnid_key,drugkey] + 1 
+
+# Count matrix showing how many times drug was given to patient
+plt.figure(figsize=(15,15))
+sns.heatmap(drugmatrix.iloc[:,:], annot=False)
+plt.tight_layout()
+plt.savefig("./drug_matrix.png")
+plt.show()
+
+# Binary matrix indicating whether the drug was used
+plt.figure(figsize=(15,15))
+sns.heatmap(drugmatrix.iloc[:,:]>0, annot=False)
+plt.tight_layout()
+plt.savefig("./drug_matrix_binary.png")
+plt.show()
