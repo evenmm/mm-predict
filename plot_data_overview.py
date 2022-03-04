@@ -76,12 +76,14 @@ for row_index in range(len(df_mprotein_and_dates)):
     if not missing_date_bool: 
         # Remove nan drugs
         drugs_1 = drugs_1[~isNaN(drugs_1)]
+        ## Exclude Radiation
+        #drugs_1 = drugs_1[drugs_1 != "Radiation"]
         # Create an empty list of drugs. Here we assume that there are no duplicate drug entries.
         this_drug_set = []
         for ii in range(len(drugs_1)):
-            drugkey = drug_dictionary[drugs_1[ii]]
-            this_drug_set.append(drugkey)
-            # Could also add drug name: drugs_1[ii]
+            #drugkey = drug_dictionary[drugs_1[ii]]
+            #this_drug_set.append(drugkey)
+            this_drug_set.append(drugs_1[ii]) 
 
     all_treatment_lines.append(frozenset(this_drug_set)) # adding a frozenset to the list of frozensets
 
@@ -94,6 +96,31 @@ print("There are "+str(number_of_unique_treatment_lines)+" unique treatment_line
 print(unique_treatment_lines)
 treatment_line_dictionary = dict(zip(unique_treatment_lines, treatment_line_ids))
 print(treatment_line_dictionary)
+
+#################################################################################################################
+# Add a column with treatment line ids. 
+# Then sort the table based on treatment start
+# This gives us a list of treatments per patient, while staying in pandas
+#################################################################################################################
+# Not looking at single day treatments of Melphalan; 2-day of Melphalan+Carfilzomib, or Cyclophosphamide: 'Drug 1.1', 'Drug 2.1', 'Drug 3.1', 'Drug 4.1'
+df_mprotein_and_dates["Treatment line id"] = -1
+for row_index in range(len(df_mprotein_and_dates)):
+    treat_dates = np.array(df_mprotein_and_dates.loc[row_index, ['Start date', 'End date', 'Start date.1', 'End date.1']])
+    drug_interval_1 = treat_dates[0:2] # For the first drug combination
+    missing_date_bool = isNaN(drug_interval_1).any()
+    if not missing_date_bool: 
+        raw_drugs = df_mprotein_and_dates.loc[row_index, ['Drug 1', 'Drug 2', 'Drug 3', 'Drug 4']].values
+        raw_drugs = raw_drugs[~isNaN(raw_drugs)]
+        #raw_drugs = raw_drugs[raw_drugs!="Radiation"]
+        #print(raw_drugs)
+        #print(treatment_line_dictionary[frozenset(raw_drugs)])
+        df_mprotein_and_dates.loc[row_index, "Treatment line id"] = treatment_line_dictionary[frozenset(raw_drugs)]
+
+# Sort df after nnid and then Start date
+df_mprotein_and_dates.sort_values(['nnid', 'Start date'])
+
+print(df_mprotein_and_dates.head(n=5))
+
 
 #################################################################################################################
 # Individual drugs and M protein history plot
@@ -346,7 +373,6 @@ if count_mprotein > 2 and count_treatments > 0:
     plt.savefig("./Treatment_line_plots/" + str(nnid) + ".png")
 #plt.show()
 plt.close()
-
 
 #################################################################################################################
 # Plot matrix of drug counts per patient
