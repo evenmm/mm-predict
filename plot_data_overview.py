@@ -6,6 +6,7 @@ from matplotlib.patches import Rectangle
 import datetime 
 from pandas import DataFrame
 import seaborn as sns
+from color_dictionaries import *
 years = mdates.YearLocator()   # every year
 months = mdates.MonthLocator()  # every month
 yearsFmt = mdates.DateFormatter('%Y')
@@ -98,8 +99,7 @@ print(treatment_line_dictionary)
 # Individual drugs and M protein history plot
 #################################################################################################################
 # For each patient (nnid), we make a figure and plot all the values
-from color_dictionaries import *
-colordict = dict(zip(drug_ids, drug_colors))
+drug_colordict = dict(zip(drug_ids, drug_colors))
 # Initialize nnid
 nnid = df_mprotein_and_dates.loc[1,['nnid']][0]
 count_mprotein = 0
@@ -172,9 +172,9 @@ for row_index in range(len(df_mprotein_and_dates)):
                 maxdrugkey = drugkey
             #if treatment_time_1 > datetime.timedelta(days=10):
             #             Rectangle(             xy              , width           , height, angle=0.0, ...)
-            ax2.add_patch(Rectangle((drug_interval_1[0], drugkey - plotheight/2), treatment_time_1, plotheight, zorder=2, color=colordict[drugkey]))
+            ax2.add_patch(Rectangle((drug_interval_1[0], drugkey - plotheight/2), treatment_time_1, plotheight, zorder=2, color=drug_colordict[drugkey]))
             #else:
-            #ax2.plot(drug_interval_1, [drugkey, drugkey], linestyle='-', linewidth=10, marker='D', zorder=2, color=colordict[drugkey])
+            #ax2.plot(drug_interval_1, [drugkey, drugkey], linestyle='-', linewidth=10, marker='D', zorder=2, color=drug_colordict[drugkey])
 
     # Second drug entry: Single day treatments
     drug_interval_2 = treat_dates[2:4] # For the second drug combination
@@ -193,9 +193,9 @@ for row_index in range(len(df_mprotein_and_dates)):
                 maxdrugkey = drugkey
             #if treatment_time_1 > datetime.timedelta(days=10):
             #             Rectangle(             xy              , width           , height, angle=0.0, ...)
-            ax2.add_patch(Rectangle((drug_interval_2[0], drugkey - plotheight/2), treatment_time_2, plotheight, zorder=2, color=colordict[drugkey]))
+            ax2.add_patch(Rectangle((drug_interval_2[0], drugkey - plotheight/2), treatment_time_2, plotheight, zorder=2, color=drug_colordict[drugkey]))
             #else:
-            #ax2.plot(drug_interval_2, [drugkey, drugkey], linestyle='-', linewidth=10, marker='D', zorder=2, color=colordict[drugkey])
+            #ax2.plot(drug_interval_2, [drugkey, drugkey], linestyle='-', linewidth=10, marker='D', zorder=2, color=drug_colordict[drugkey])
 
     # Plot Mprotein values at corresponding dates
     dates = df_mprotein_and_dates.loc[row_index, ['Diagnosis date', 'Treatment start', 'Date of best response:', 'Date of best response:.1', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
@@ -235,8 +235,117 @@ print("There are "+str(patient_count)+" patients that satisfy the criteria for i
 #################################################################################################################
 # Treatment lines and M protein history plot
 #################################################################################################################
+# For each patient (nnid), we make a figure and plot the treatment lines
+treat_colordict = dict(zip(treatment_line_ids, treat_line_colors))
+# Initialize nnid
+nnid = df_mprotein_and_dates.loc[1,['nnid']][0]
+count_mprotein = 0
+count_treatments = 0
+fig, ax1 = plt.subplots()
+#plt.setp(ax1.xaxis.get_minorticklabels(), rotation=90)
+#plt.setp(ax1.xaxis.get_majorticklabels(), rotation=90)
+ax1.patch.set_facecolor('none')
+ax1.xaxis.set_major_locator(years)
+ax1.xaxis.set_major_formatter(yearsFmt)
+ax1.xaxis.set_minor_locator(months)
+#ax1.xaxis.set_minor_formatter(monthsFmt)
+ax2 = ax1.twinx() 
+plotheight = 1
+max_treat_line_key = 0
+patient_count = 0
+for row_index in range(len(df_mprotein_and_dates)):
+    # Check if it's the same patient.
+    # If it's a new patient, then save plot and initialize new figure with new nnid
+    if not (df_mprotein_and_dates.loc[row_index,['nnid']][0] == nnid):
+        ax1.set_title("Patient ID " + str(nnid))
+        ax1.set_xlabel("Time (year)")
+        ax1.set_ylabel("Serum Mprotein (g/L)")
+        ax1.set_ylim(bottom=0)
+        ax2.set_ylabel("Treatment line")
+        ax2.set_yticks(range(max_treat_line_key+1))
+        ax2.set_yticklabels(range(max_treat_line_key+1))
+        #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
+        ax1.set_zorder(ax1.get_zorder()+3)
+        fig.autofmt_xdate()
+        fig.tight_layout()
+        # Only save the plot if there are at least 3 M protein measurements
+        if count_mprotein > 2 and count_treatments > 0:
+            patient_count = patient_count + 1
+            plt.savefig("./Treatment_line_plots/" + str(nnid) + ".png")
+        #plt.show()
+        plt.close()
 
-#---
+        nnid = df_mprotein_and_dates.loc[row_index,['nnid']][0]
+        count_mprotein = 0
+        count_treatments = 0
+        fig, ax1 = plt.subplots()
+        #plt.setp(ax1.xaxis.get_minorticklabels(), rotation=90)
+        #plt.setp(ax1.xaxis.get_majorticklabels(), rotation=90)
+        ax1.patch.set_facecolor('none')
+        ax1.xaxis.set_major_locator(years)
+        ax1.xaxis.set_major_formatter(yearsFmt)
+        ax1.xaxis.set_minor_locator(months)
+        #ax1.xaxis.set_minor_formatter(monthsFmt)
+        ax2 = ax1.twinx() 
+        max_treat_line_key = 0
+
+    # Plot treatments
+    treat_dates = np.array(df_mprotein_and_dates.loc[row_index, ['Start date', 'End date', 'Start date.1', 'End date.1']])
+
+    # First drug entry: Treatments that last more than 1 day 
+    drug_interval_1 = treat_dates[0:2] # For the first drug combination
+    treatment_time_1 = drug_interval_1[1] - drug_interval_1[0]
+    #print(treatment_time_1)
+    drugs_1 = np.array(df_mprotein_and_dates.loc[row_index, ['Drug 1', 'Drug 2', 'Drug 3', 'Drug 4']])
+    # Remove cases with missing end dates
+    missing_date_bool = isNaN(drug_interval_1).any()
+    if not missing_date_bool: 
+        count_treatments = count_treatments+1
+        # Remove nan drugs
+        drugs_1 = drugs_1[~isNaN(drugs_1)]
+        this_drug_set = []
+        for ii in range(len(drugs_1)):
+            drugkey = drug_dictionary[drugs_1[ii]]
+            this_drug_set.append(drugkey)
+        # Find the treatment line id
+        this_treatment_line = frozenset(this_drug_set)
+        treat_line_id = treatment_line_dictionary[this_treatment_line]
+        if treat_line_id > max_treat_line_key:
+            max_treat_line_key = treat_line_id
+        ax2.add_patch(Rectangle((drug_interval_1[0], treat_line_id - plotheight/2), treatment_time_1, plotheight, zorder=2, color=treat_colordict[treat_line_id]))
+
+    # Plot Mprotein values at corresponding dates
+    dates = df_mprotein_and_dates.loc[row_index, ['Diagnosis date', 'Treatment start', 'Date of best response:', 'Date of best response:.1', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
+    mprotein_levels = df_mprotein_and_dates.loc[row_index, ['Serum mprotein (SPEP)', 'Serum mprotein (SPEP) (g/l):', 'Serum mprotein:', 'Serum mprotein:.1', 'Serum mprotein:.2', 'Serum mprotein:.3', 'Serum mprotein:.4', 'SerumMprotein']]
+    # Suppress cases with missing data for mprotein
+    nan_mask_mprotein = np.array(mprotein_levels.notna())
+    dates = dates[nan_mask_mprotein]
+    mprotein_levels = mprotein_levels[nan_mask_mprotein]
+    # and for dates
+    nan_mask_dates = np.array(dates.notna())
+    dates = dates[nan_mask_dates]
+    mprotein_levels = mprotein_levels[nan_mask_dates]
+    if len(mprotein_levels) > 0:
+        count_mprotein = count_mprotein+1
+
+    ax1.plot(dates, mprotein_levels, linestyle='', marker='x', zorder=3, color='k')
+
+ax1.set_title("Patient ID " + str(nnid))
+ax1.set_xlabel("Time (year)")
+ax1.set_ylabel("Serum Mprotein (g/L)")
+ax1.set_ylim(bottom=0)
+ax2.set_ylabel("Treatment line")
+ax2.set_yticks(range(max_treat_line_key+1))
+ax2.set_yticklabels(range(max_treat_line_key+1))
+#ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
+ax1.set_zorder(ax1.get_zorder()+3)
+fig.autofmt_xdate()
+fig.tight_layout()
+if count_mprotein > 2 and count_treatments > 0:
+    patient_count = patient_count + 1
+    plt.savefig("./Treatment_line_plots/" + str(nnid) + ".png")
+#plt.show()
+plt.close()
 
 
 #################################################################################################################
