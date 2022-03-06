@@ -46,7 +46,9 @@ df_mprotein_and_dates = df[['nnid',
 def isNaN(string):
     return string != string
 
-## Make dictionary of drugs
+#################################################################################################################
+## Make dictionary of drugs, where the key is the drug names, the value is the id
+#################################################################################################################
 raw_unique_drugs = pd.unique(df_mprotein_and_dates[['Drug 1', 'Drug 2', 'Drug 3', 'Drug 4', 'Drug 1.1', 'Drug 2.1', 'Drug 3.1', 'Drug 4.1']].values.ravel('K'))
 nan_mask_drugs = ~isNaN(raw_unique_drugs)
 unique_drugs = raw_unique_drugs[nan_mask_drugs]
@@ -57,7 +59,9 @@ print(unique_drugs)
 drug_dictionary = dict(zip(unique_drugs, drug_ids))
 print(drug_dictionary)
 
-## Make dictionary of treatment lines
+#################################################################################################################
+## Make dictionary of treatment lines, where the key is a frozenset of drug names, the value is the id
+#################################################################################################################
 # Make a list of treatment lines. A treatment line is a frozenset of drug_ids, making this a list of frozensets
 all_treatment_lines = []
 # Loop over all treatment lines and add them to the set
@@ -87,21 +91,22 @@ for row_index in range(len(df_mprotein_and_dates)):
 
     all_treatment_lines.append(frozenset(this_drug_set)) # adding a frozenset to the list of frozensets
 
-# Then create a frozenset from the list so entries are unique and hashable
-unique_treatment_lines = frozenset(all_treatment_lines)
+unique_treatment_lines = []
+for item in all_treatment_lines:
+    if item not in unique_treatment_lines:
+        unique_treatment_lines.append(item)
 # Then create treatment line ids and zip them with the frozenset to create a dict 
 treatment_line_ids = range(len(unique_treatment_lines))
 number_of_unique_treatment_lines = len(unique_treatment_lines)
-print("There are "+str(number_of_unique_treatment_lines)+" unique treatment_lines.")
-print(unique_treatment_lines)
+print("\nThere are "+str(number_of_unique_treatment_lines)+" unique treatment_lines.")
+#print(unique_treatment_lines)
 treatment_line_dictionary = dict(zip(unique_treatment_lines, treatment_line_ids))
 print(treatment_line_dictionary)
 
 #################################################################################################################
-# Add a column with treatment line ids. 
-# Then sort the table based on treatment start
-# This gives us a list of treatments per patient, while staying in pandas
+## Make dataframe with treatment lines per patient
 #################################################################################################################
+# Add a column with treatment line ids
 # Not looking at single day treatments of Melphalan; 2-day of Melphalan+Carfilzomib, or Cyclophosphamide: 'Drug 1.1', 'Drug 2.1', 'Drug 3.1', 'Drug 4.1'
 df_mprotein_and_dates["Treatment line id"] = -1
 for row_index in range(len(df_mprotein_and_dates)):
@@ -117,9 +122,67 @@ for row_index in range(len(df_mprotein_and_dates)):
         df_mprotein_and_dates.loc[row_index, "Treatment line id"] = treatment_line_dictionary[frozenset(raw_drugs)]
 
 # Sort df after nnid and then Start date
-df_mprotein_and_dates.sort_values(['nnid', 'Start date'])
+df_mprotein_and_dates = df_mprotein_and_dates.sort_values(['nnid', 'Start date'])
+# Reset index to make iteration over sorted version possible
+df_mprotein_and_dates.reset_index(drop=True, inplace=True)
+print(df_mprotein_and_dates[['nnid', 'Start date', 'End date', 'Drug 1', 'Drug 2', 'Drug 3', 'Drug 4', "Treatment line id"]].head(n=20))
 
-print(df_mprotein_and_dates.head(n=5))
+# Now ask: How many patients got Len+Dex+Bor as first treatment? For this we must know 1st, 2nd, 3rd treatment 
+# Create new dataframe with 1 row for each patient and columns "Treatment line 1", "Treatment line 2", etc: 
+# Since df is sorted by start date of treatment, we can loop over df and take treatment by treatment for each patient, add to this list 
+empty_dict = {"nnid": [],
+              "Treatment line 1": [],
+              "Treatment line 2": [],
+              "Treatment line 3": [],
+              "Treatment line 4": [],
+              "Treatment line 5": [],
+              "Treatment line 6": [],
+              "Treatment line 7": [],
+              "Treatment line 8": [],
+              "Treatment line 9": [],
+              "Treatment line 10": [],
+              "Treatment line 11": [],
+              "Treatment line 12": [],
+              "Treatment line 13": [],
+              "Treatment line 14": [],
+              "Treatment line 15": [],
+              "Treatment line 16": [],
+              "Treatment line 17": [],
+              "Treatment line 18": [],
+              "Treatment line 19": [],
+              "Treatment line 20": []}
+df_treatment_lines = pd.DataFrame(empty_dict)
+
+nnid = df_mprotein_and_dates.loc[1,['nnid']][0]
+next_treatment_line_this_patient = 1
+initialized = False
+for row_index in range(len(df_mprotein_and_dates)):
+    treat_dates = np.array(df_mprotein_and_dates.loc[row_index, ['Start date', 'End date', 'Start date.1', 'End date.1']])
+    drug_interval_1 = treat_dates[0:2] # For the first drug combination
+    missing_date_bool = isNaN(drug_interval_1).any()
+    # Check if radiation or missing date
+    if (not missing_date_bool) and (not (df_mprotein_and_dates.loc[row_index,['Drug 1']][0] == "Radiation")):
+        this_treatment_line_id = df_mprotein_and_dates.loc[row_index,['Treatment line id']][0]
+        # If new nnid:
+        if not (df_mprotein_and_dates.loc[row_index,['nnid']][0] == nnid):
+            nnid = df_mprotein_and_dates.loc[row_index,['nnid']][0]
+            df_treatment_lines.loc[len(df_treatment_lines.index)] = [nnid, this_treatment_line_id] + np.repeat(np.nan, 19).tolist()
+            next_treatment_line_this_patient = 2
+        else:
+            if initialized == False:
+                # Add first row to dataframe
+                df_treatment_lines.loc[len(df_treatment_lines.index)] = [nnid, this_treatment_line_id] + np.repeat(np.nan, 19).tolist()
+                next_treatment_line_this_patient = 2
+                initialized = True
+            else: 
+                # Add treatment line to existing patient
+                df_treatment_lines.loc[nnid-1, "Treatment line "+str(next_treatment_line_this_patient)] = this_treatment_line_id
+                next_treatment_line_this_patient = next_treatment_line_this_patient + 1
+print(df_treatment_lines[["nnid", "Treatment line 1", "Treatment line 2", "Treatment line 3", "Treatment line 4", "Treatment line 5", "Treatment line 6", "Treatment line 7", "Treatment line 8", "Treatment line 9"]].head(n=20))
+
+################################################################################################################
+# Plot tree of treatment line histories 
+#################################################################################################################
 
 
 #################################################################################################################
@@ -332,8 +395,9 @@ for row_index in range(len(df_mprotein_and_dates)):
         drugs_1 = drugs_1[~isNaN(drugs_1)]
         this_drug_set = []
         for ii in range(len(drugs_1)):
-            drugkey = drug_dictionary[drugs_1[ii]]
-            this_drug_set.append(drugkey)
+            #drugkey = drug_dictionary[drugs_1[ii]]
+            #this_drug_set.append(drugkey)
+            this_drug_set.append(drugs_1[ii])
         # Find the treatment line id
         this_treatment_line = frozenset(this_drug_set)
         treat_line_id = treatment_line_dictionary[this_treatment_line]
