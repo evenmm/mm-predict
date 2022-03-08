@@ -154,6 +154,7 @@ empty_dict = {"nnid": [],
 df_treatment_lines = pd.DataFrame(empty_dict)
 
 nnid = df_mprotein_and_dates.loc[1,['nnid']][0]
+index_counter = 0
 next_treatment_line_this_patient = 1
 initialized = False
 for row_index in range(len(df_mprotein_and_dates)):
@@ -168,6 +169,7 @@ for row_index in range(len(df_mprotein_and_dates)):
             nnid = df_mprotein_and_dates.loc[row_index,['nnid']][0]
             df_treatment_lines.loc[len(df_treatment_lines.index)] = [nnid, this_treatment_line_id] + np.repeat(np.nan, 19).tolist()
             next_treatment_line_this_patient = 2
+            index_counter = index_counter + 1
         else:
             if initialized == False:
                 # Add first row to dataframe
@@ -176,15 +178,178 @@ for row_index in range(len(df_mprotein_and_dates)):
                 initialized = True
             else: 
                 # Add treatment line to existing patient
-                df_treatment_lines.loc[nnid-1, "Treatment line "+str(next_treatment_line_this_patient)] = this_treatment_line_id
+                df_treatment_lines.loc[index_counter, "Treatment line "+str(next_treatment_line_this_patient)] = this_treatment_line_id
                 next_treatment_line_this_patient = next_treatment_line_this_patient + 1
-print(df_treatment_lines[["nnid", "Treatment line 1", "Treatment line 2", "Treatment line 3", "Treatment line 4", "Treatment line 5", "Treatment line 6", "Treatment line 7", "Treatment line 8", "Treatment line 9"]].head(n=20))
+print(df_treatment_lines[["nnid", "Treatment line 1", "Treatment line 2", "Treatment line 3", "Treatment line 4", "Treatment line 5", "Treatment line 6", "Treatment line 7", "Treatment line 8", "Treatment line 9"]].head(n=200))
+df_treatment_lines.reset_index(drop=True, inplace=True)
+
+# Histogram of Treatment line 1
+#treatment_counts = data_treat_line_1.value_counts()
+#print(treatment_counts)
+data_treat_line_1 = df_treatment_lines[["Treatment line 1"]]
+sns.set(font_scale=0.6)
+data_treat_line_1.value_counts().plot(kind='bar', figsize=(7, 6), rot=0)
+plt.xlabel("Treatment line id", labelpad=14)
+plt.xticks()
+plt.ylabel("Count of patients", labelpad=14)
+plt.title("Count of patients per treatment line id for first treatment", y=1.02)
+for i, v in enumerate(data_treat_line_1.value_counts()):
+    plt.text(i*1.004-0.16, v+1, str(v))
+plt.savefig("./first_treatment_line_id.png")
+#plt.show()
+plt.close()
+
+#plt.bar(range(len(treatment_counts)), treatment_counts)
+#plt.show()
+
+# Histogram of Treatment line 2 for those that got 'Velcade (bortezomib) - subcut twice weekly', 'Dexamethasone', 'Cyclophosphamide' as first treatment line
+df_VelDexCyclo_as_first_treatment = df_treatment_lines.loc[df_treatment_lines['Treatment line 1'] == 2] 
+print("These receive treatment line 2 as first treatment")
+pd.set_option('display.max_rows', 70)
+print(df_VelDexCyclo_as_first_treatment) #[["nnid", "Treatment line 1", "Treatment line 2", "Treatment line 3", "Treatment line 4", "Treatment line 5", "Treatment line 6", "Treatment line 7", "Treatment line 8", "Treatment line 9"]].head(n=200))
+
+plt.figure()
+data_treat_line_2 = df_VelDexCyclo_as_first_treatment[["Treatment line 2"]]
+sns.set(font_scale=0.6)
+data_treat_line_2.value_counts().plot(kind='bar', figsize=(7, 6), rot=0)
+plt.xlabel("Treatment line id", labelpad=14)
+plt.xticks()
+plt.ylabel("Count of patients", labelpad=14)
+plt.title("Count of patients per treatment line id for second treatment", y=1.02)
+for i, v in enumerate(data_treat_line_2.value_counts()):
+    plt.text(i*1.004-0.16, v+1, str(v))
+plt.savefig("./second_treatment_line_given_VelDexCyclo.png")
+#plt.show()
+plt.close()
+
+# Plot the M protein vales for those patients that receive treatment 2 first, then treatment 1
+# Choose only the lines from the sorted first dataframe that match these nnid
+selected_nnid = df_VelDexCyclo_as_first_treatment["nnid"].tolist()
+print("selected_nnid", selected_nnid)
+df_selected_mprotein_and_dates = df_mprotein_and_dates.loc[df_mprotein_and_dates['nnid'].isin(selected_nnid)]
+df_selected_mprotein_and_dates.reset_index(drop=True, inplace=True)
+print("These are the patients that receive treatment line 2 as first treatment:")
+print(df_selected_mprotein_and_dates[['nnid', 'Start date', 'End date', 'Drug 1', 'Drug 2', 'Drug 3', 'Drug 4', "Treatment line id"]].head(n=20))
+print("These are their second treatments")
+print(df_VelDexCyclo_as_first_treatment[['Treatment line 2']].values.ravel('K'))
+
+treatment_starts = []
+
+# Find the treatment start we are interested in: The start of second treatment
+correct_patient_history = [2,1]
+nnid = df_selected_mprotein_and_dates.loc[1,['nnid']][0]
+patient_history = []
+patient_count = 0
+for row_index in range(len(df_selected_mprotein_and_dates)):
+    treat_dates = np.array(df_selected_mprotein_and_dates.loc[row_index, ['Start date', 'End date', 'Start date.1', 'End date.1']])
+    drug_interval_1 = treat_dates[0:2] # For the first drug combination
+    missing_date_bool = isNaN(drug_interval_1).any()
+    # Check if radiation or missing date
+    if (not missing_date_bool) and (not (df_selected_mprotein_and_dates.loc[row_index,['Drug 1']][0] == "Radiation")):
+        this_treatment_line_id = df_selected_mprotein_and_dates.loc[row_index,['Treatment line id']][0]
+        # Check if it's the same patient.
+        # If it's a new patient, then start checking fistory from beginning
+        if not (df_selected_mprotein_and_dates.loc[row_index,['nnid']][0] == nnid):
+            nnid = df_selected_mprotein_and_dates.loc[row_index,['nnid']][0]
+            patient_history = []
+        patient_history.append(this_treatment_line_id)
+
+        # Patient history defines the history + the one we want to plot
+        # If the history matches the correct one then the last is the one we want to plot. Save its treatment start
+        if patient_history == correct_patient_history:
+        #if len(patient_history) == len(correct_patient_history)+1:
+            # Save the treatment start date
+            treatment_starts.append(np.array(df_selected_mprotein_and_dates.loc[row_index, ['Treatment start']])[0])
+            patient_count = patient_count + 1 
+print(treatment_starts)
+print(patient_count)
+# Give each patient a color: 
+patient_colordict = dict(zip(selected_nnid, treat_line_colors[0:len(selected_nnid)]))
+
+# Then plot all the M protein values with time relative to the treatment start
+# Iterate through lines of treatment with M protein values
+# For each patient, loop over the filtered df_mprotein_and_dates:
+#   Plot the M protein values from the treatment line we are interested in (e.g. first or second time they have Dex+Len+Velcade)
+print(df_selected_mprotein_and_dates[['nnid', 'Diagnosis date', 'Serum mprotein (SPEP)', 'Treatment start', 'Serum mprotein (SPEP) (g/l):', 'Date of best response:', 'Serum mprotein:', 'Date of best response:.1', 'Serum mprotein:.1', 'Date of best respone:', 'Serum mprotein:.2', 'Date of best respone:.1', 'Serum mprotein:.3', 'Progression date:', 'Serum mprotein:.4', 'DateOfLabValues', 'SerumMprotein']].head(n=20))
+nnid = df_selected_mprotein_and_dates.loc[1,['nnid']][0]
+patient_history = []
+fig, ax1 = plt.subplots()
+#plt.setp(ax1.xaxis.get_minorticklabels(), rotation=90)
+#plt.setp(ax1.xaxis.get_majorticklabels(), rotation=90)
+ax1.patch.set_facecolor('none')
+ax1.axvline(0, color="k", linewidth=0.5, linestyle="-")
+#ax1.xaxis.set_major_locator(years)
+#ax1.xaxis.set_major_formatter(yearsFmt)
+#ax1.xaxis.set_minor_locator(months)
+#ax1.xaxis.set_minor_formatter(monthsFmt)
+ax2 = ax1.twinx() 
+plotheight = 1
+patient_count = 0
+for row_index in range(len(df_selected_mprotein_and_dates)):
+    treat_dates = np.array(df_selected_mprotein_and_dates.loc[row_index, ['Start date', 'End date', 'Start date.1', 'End date.1']])
+    drug_interval_1 = treat_dates[0:2] # For the first drug combination
+    missing_date_bool = isNaN(drug_interval_1).any()
+    # Check if radiation or missing date
+    if (not missing_date_bool) and (not (df_selected_mprotein_and_dates.loc[row_index,['Drug 1']][0] == "Radiation")):
+        this_treatment_line_id = df_selected_mprotein_and_dates.loc[row_index,['Treatment line id']][0]
+        # Check if it's the same patient.
+        # If it's a new patient, then start checking fistory from beginning
+        if not (df_selected_mprotein_and_dates.loc[row_index,['nnid']][0] == nnid):
+            nnid = df_selected_mprotein_and_dates.loc[row_index,['nnid']][0]
+            patient_history = []
+        patient_history.append(this_treatment_line_id)
+
+        if patient_history == correct_patient_history:
+        #if len(patient_history) == len(correct_patient_history):
+            # It's the last treatment and we plot the M protein values
+            # All:
+            #dates = df_selected_mprotein_and_dates.loc[row_index, ['Diagnosis date', 'Treatment start', 'Date of best response:', 'Date of best response:.1', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
+            #mprotein_levels = df_selected_mprotein_and_dates.loc[row_index, ['Serum mprotein (SPEP)', 'Serum mprotein (SPEP) (g/l):', 'Serum mprotein:', 'Serum mprotein:.1', 'Serum mprotein:.2', 'Serum mprotein:.3', 'Serum mprotein:.4', 'SerumMprotein']]
+            # Or just some: 
+            dates = df_selected_mprotein_and_dates.loc[row_index, ['Treatment start', 'Date of best response:', 'Date of best response:.1', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
+            mprotein_levels = df_selected_mprotein_and_dates.loc[row_index, ['Serum mprotein (SPEP) (g/l):', 'Serum mprotein:', 'Serum mprotein:.1', 'Serum mprotein:.2', 'Serum mprotein:.3', 'Serum mprotein:.4', 'SerumMprotein']]
+
+            # Suppress cases with missing data for mprotein
+            nan_mask_mprotein = np.array(mprotein_levels.notna())
+            dates = dates[nan_mask_mprotein]
+            mprotein_levels = mprotein_levels[nan_mask_mprotein]
+            # and for dates
+            nan_mask_dates = np.array(dates.notna())
+            dates = dates[nan_mask_dates]
+            mprotein_levels = mprotein_levels[nan_mask_dates]
+
+            # Reset time to time after Treatment start
+            if len(dates) > 0:
+                adjusted_dates = (dates - np.repeat(treatment_starts[patient_count], len(dates))).dt.days
+                #adjusted_dates = dates - np.repeat(treatment_starts[patient_count], len(dates))
+
+                #adjusted_dates = adjusted_dates.to_datetime()
+                if len(adjusted_dates) > 0:
+                    if max(abs(adjusted_dates)) > 3000:
+                    #if max(abs(adjusted_dates)) > datetime.timedelta(days=3000):
+                        print(type(adjusted_dates))
+                        print(adjusted_dates)
+
+                ax1.plot(adjusted_dates, mprotein_levels, linestyle='-', linewidth=1, marker='x', markersize=0.5, markeredgecolor="k", zorder=3, color=patient_colordict[nnid])
+            patient_count = patient_count + 1 
+ax1.set_title("Patients receiving combo " + str(correct_patient_history[0]) + " after combo " + str(correct_patient_history[1]))
+ax1.set_xlabel("Time (days since treatment start)")
+ax1.set_ylabel("Serum Mprotein (g/L)")
+ax1.set_ylim(bottom=0)
+#ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
+ax1.set_zorder(ax1.get_zorder()+3)
+#fig.autofmt_xdate()
+fig.tight_layout()
+plt.savefig("./history_" + str(correct_patient_history) + ".png")
+plt.show()
+plt.close()
+
 
 ################################################################################################################
 # Plot tree of treatment line histories 
 #################################################################################################################
 
-
+"""
 #################################################################################################################
 # Individual drugs and M protein history plot
 #################################################################################################################
@@ -502,3 +667,4 @@ sns.heatmap(drugmatrix.iloc[:,:]>0, annot=False)
 plt.tight_layout()
 plt.savefig("./drug_matrix_binary.png")
 #plt.show()
+"""
