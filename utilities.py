@@ -2,6 +2,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import sys
+from scipy import optimize
+from scipy.optimize import least_squares
+
+np.random.seed(42)
+from numpy.random import MT19937
+from numpy.random import RandomState, SeedSequence
+rs = RandomState(MT19937(SeedSequence(123456789)))
+## Later, you want to restart the stream
+#rs = RandomState(MT19937(SeedSequence(987654321)))
 
 # Assumptions and definitions: 
 # The atomic unit of time is 1 day
@@ -89,7 +98,7 @@ def measure_Mprotein_naive(params, measurement_times, treatment_history):
     #return params.Y_0 * params.pi_r * np.exp(params.g_r * measurement_times) + params.Y_0 * (1-params.pi_r) * np.exp((params.g_s - params.k_1) * measurement_times)
 
 #treat_colordict = dict(zip(treatment_line_ids, treat_line_colors))
-def plot_true_mprotein_with_observations_and_treatments(true_parameters, measurement_times, treatment_history, M_protein_observations):
+def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parameters, measurement_times, treatment_history, M_protein_observations, estimated_parameters=[], PLOT_ESTIMATES=False):
     # Resolution of 10 points per day, plotting 10 days beyond last treatment
     #plotting_times = np.linspace(0, int(measurement_times[-1]+10), int((measurement_times[-1]+10+1)*10))
     plotting_times = np.linspace(0, int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
@@ -97,8 +106,8 @@ def plot_true_mprotein_with_observations_and_treatments(true_parameters, measure
     # Plot true M protein values according to true parameters
     end_of_history = treatment_history[-1].end
     plotting_mprotein_values = measure_Mprotein_noiseless(true_parameters, plotting_times, treatment_history)
-    print(plotting_times)
-    print(plotting_mprotein_values)
+    if PLOT_ESTIMATES:
+        estimated_mprotein_values = measure_Mprotein_noiseless(estimated_parameters, plotting_times, treatment_history)
 
     # Plot M protein values
     plotheight = 1
@@ -108,6 +117,9 @@ def plot_true_mprotein_with_observations_and_treatments(true_parameters, measure
     fig, ax1 = plt.subplots()
     ax1.patch.set_facecolor('none')
     ax1.plot(plotting_times, plotting_mprotein_values, linestyle='-', marker='', zorder=3, color='k')
+    if PLOT_ESTIMATES:
+        # Plot estimtated Mprotein line
+        ax1.plot(plotting_times, estimated_mprotein_values, linestyle='-', marker='', zorder=3, color='r')
 
     ax1.plot(measurement_times_patient_1, M_protein_observations, linestyle='', marker='x', zorder=3, color='k')
 
@@ -137,12 +149,12 @@ def plot_true_mprotein_with_observations_and_treatments(true_parameters, measure
     #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
     ax1.set_zorder(ax1.get_zorder()+3)
     fig.tight_layout()
-    plt.savefig("./patient_truth_and_observations.pdf")
+    if PLOT_ESTIMATES:
+        plt.savefig("./patient_truth_and_observations_with_model_fit.pdf")
+    else:
+        plt.savefig("./patient_truth_and_observations.pdf")
     plt.show()
     plt.close()
-
-#def least_squares_objective_function(observations, predictions):
-    
 
 
 #####################################
@@ -159,11 +171,15 @@ global_sigma = 1  #Measurement noise
 # No drug:   A doubling time of 2 months = 60 days means that X1/X0 = 2   = e^(60*alpha) ==> alpha = log(2)/60   = approx.  0.005 1/days
 # With drug: A halving  time of 2 months = 60 days means that X1/X0 = 1/2 = e^(60*alpha) ==> alpha = log(1/2)/60 = approx. -0.005 1/days
 # Encoding cost of resistance giving resistant cells a lower base growth rate than sensitive cells 
-parameters_patient_1 = Parameters(Y_0=50, pi_r=0.10, g_r=0.008, g_s=0.010, k_1=0.020, sigma=global_sigma)
+
+# With drug effect and growth rate parameters:
+#parameters_patient_1 = Parameters(Y_0=50, pi_r=0.10, g_r=0.008, g_s=0.010, k_1=0.020, sigma=global_sigma)
+# With bulk growth rates on treatment:
+parameters_patient_1 = Parameters(Y_0=50, pi_r=0.01, g_r=0.008, g_s=-0.010, k_1=0.000, sigma=global_sigma)
 
 # Measure M protein
-Mprotein_recording_interval = 10 #every X days
-N_Mprotein_measurements = 36 # for N*X days
+Mprotein_recording_interval = 60 #every X days
+N_Mprotein_measurements = 5 # for N*X days
 measurement_times_patient_1 = Mprotein_recording_interval * np.linspace(0,N_Mprotein_measurements,N_Mprotein_measurements+1)
 
 #####################################
@@ -187,10 +203,61 @@ print("observed_M_protein_values_patient_1, efficient method:\n", observed_M_pro
 #####################################
 # Plot data 
 #####################################
-plot_true_mprotein_with_observations_and_treatments(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1)
+plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1)
 
 #####################################
 # Inference
 #####################################
-#MLE_estimates = 
+# For inferring both growth rates, k_D and sigma:
+##      Y_0, pi_r,   g_r,   g_s,   k_1=0.020
+#lb = [   0,    0, -0.10, -0.10,  0.00, 1e-6]
+#ub = [1000,    1,  0.10,  0.10,  0.50,  5e4]
+params_to_be_inferred = np.array([parameters_patient_1.Y_0, parameters_patient_1.pi_r, parameters_patient_1.g_r, parameters_patient_1.g_s])
+# For inferring bulk growth rates
+#               Y_0, pi_r,   g_r,   g_s,
+lb = np.array([   0,    0, -0.10, -0.10])
+ub = np.array([1000,    1,  0.10,  0.10])
+bounds_Y_0 = (lb[0], ub[0])
+bounds_pi_r = (lb[1], ub[1])
+bounds_g_r = (lb[2], ub[2])
+bounds_g_s = (lb[3], ub[3])
+#bounds_Y_0 =     (0, 1000)
+#bounds_pi_r =    (0,    1)
+#bounds_g_r = (-0.10, 0.10)
+#bounds_g_s = (-0.10, 0.10)
+
+all_bounds = (bounds_Y_0, bounds_pi_r, bounds_g_r, bounds_g_s)
+
+def least_squares_objective_function(array_x, measurement_times, treatment_history, observations):
+    Parameter_object_x = Parameters(Y_0=array_x[0], pi_r=array_x[1], g_r=array_x[2], g_s=array_x[3], k_1=0.000, sigma=global_sigma)
+    predictions = measure_Mprotein_noiseless(Parameter_object_x, measurement_times, treatment_history)
+    sumofsquares = np.sum((observations - predictions)**2)
+    return sumofsquares
+
+random_samples = np.random.uniform(0,1,len(ub))
+x0_0 = lb + np.multiply(random_samples, (ub-lb))
+
+lowest_f_value = np.inf
+best_x = np.array([0,0,0,0])
+for iteration in range(1000):
+    random_samples = np.random.uniform(0,1,len(ub))
+    x0 = lb + np.multiply(random_samples, (ub-lb))
+    optimization_result = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1), bounds=all_bounds, options={'disp':False})
+    if optimization_result.fun < lowest_f_value:
+        lowest_f_value = optimization_result.fun
+        best_x = optimization_result.x
+
+print("Compare truth with estimate:")
+print("True x:", params_to_be_inferred)
+print("Inferred x:", best_x)
+
+f_value_at_truth = least_squares_objective_function(params_to_be_inferred, measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1)
+x0_value = least_squares_objective_function(x0_0, measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1)
+
+print("f value at first x0:", x0_value)
+print("f value at truth:", f_value_at_truth)
+print("f value at estimate:", lowest_f_value)
+
+estimated_parameters = Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=0.000, sigma=global_sigma)
+plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1, estimated_parameters=estimated_parameters, PLOT_ESTIMATES=True)
 
