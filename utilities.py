@@ -307,21 +307,21 @@ plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_pati
 # Patient 2
 #####################################
 # With k drug effect and growth rate parameters:
-parameters_patient_2 = Parameters(Y_0=50, pi_r=0.01, g_r=0.020, g_s=0.100, k_1=0.200, sigma=global_sigma)
+parameters_patient_2 = Parameters(Y_0=50, pi_r=0.10, g_r=0.020, g_s=0.100, k_1=0.200, sigma=global_sigma)
 
 # Measure M protein
 Mprotein_recording_interval_patient_2 = 10 #every X days
-N_Mprotein_measurements_patient_2 = 20 # for N*X days
+N_Mprotein_measurements_patient_2 = 5 # for N*X days
 measurement_times_patient_2 = Mprotein_recording_interval_patient_2 * np.linspace(0,N_Mprotein_measurements_patient_2,N_Mprotein_measurements_patient_2+1)
 
-shhh=0
 treatment_history_patient_2 = [
-    Treatment(start=0, end=measurement_times_patient_2[3+shhh], id=1),
-    Treatment(start=measurement_times_patient_2[3+shhh], end=measurement_times_patient_2[4+shhh], id=0),
-    Treatment(start=measurement_times_patient_2[4+shhh], end=measurement_times_patient_2[5+shhh], id=1),
-    Treatment(start=measurement_times_patient_2[5+shhh], end=measurement_times_patient_2[7+shhh], id=0),
-    Treatment(start=measurement_times_patient_2[7+shhh], end=measurement_times_patient_2[-2], id=1),
-    Treatment(start=measurement_times_patient_2[-2], end=measurement_times_patient_2[-1], id=0),
+    Treatment(start=0, end=measurement_times_patient_2[1], id=1),
+    Treatment(start=measurement_times_patient_2[1], end=measurement_times_patient_2[2], id=0),
+    Treatment(start=measurement_times_patient_2[2], end=measurement_times_patient_2[3], id=1),
+    Treatment(start=measurement_times_patient_2[3], end=measurement_times_patient_2[4], id=1),
+    Treatment(start=measurement_times_patient_2[4], end=measurement_times_patient_2[5], id=0),
+    #Treatment(start=measurement_times_patient_2[5], end=measurement_times_patient_2[7], id=0),
+    #Treatment(start=measurement_times_patient_2[7], end=measurement_times_patient_2[-1], id=1),
     ]
 
 patient_2 = Patient(parameters_patient_2, measurement_times_patient_2, treatment_history_patient_2)
@@ -330,8 +330,8 @@ patient_2.plot()
 ## Inference
 # For inferring both k_1 and growth rates
 #               Y_0, pi_r,   g_r,   g_s,  k_1
-lb = np.array([   0,    0, -1.00, -2.00, 0.00])
-ub = np.array([1000,    1,  1.00,  2.00, 2.00])
+lb = np.array([   0,    0,  0.00,  0.00, 0.00])
+ub = np.array([1000,    1,  2.00,  2.00, 2.00])
 
 param_array_patient_2 = patient_2.get_parameter_array_without_sigma()
 
@@ -357,7 +357,7 @@ x0_0 = lb + np.multiply(random_samples, (ub-lb))
 
 lowest_f_value = np.inf
 best_x = np.array([0,0,0,0,0])
-for iteration in range(10000):
+for iteration in range(100000):
     random_samples = np.random.uniform(0,1,len(ub))
     x0 = lb + np.multiply(random_samples, (ub-lb))
     optimization_result = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient_2), bounds=all_bounds, options={'disp':False})
