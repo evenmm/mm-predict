@@ -35,44 +35,23 @@ class Treatment:
         self.end = end
         self.id = id
 
-class Patient: 
-    def __init__(self, parameters, measurement_times, treatment_history):
-        self.parameters = parameters
-        self.measurement_times = measurement_times
-        self.treatment_history = treatment_history
-        self.observed_values = measure_Mprotein_with_noise(self.parameters, self.measurement_times, self.treatment_history)
-    def plot(self):
-        plot_true_mprotein_with_observations_and_treatments_and_estimate(self.parameters, self.measurement_times, self.treatment_history, self.observed_values, estimated_parameters=[], PLOT_ESTIMATES=False)
-    def get_parameter_array_without_sigma(self):
-        return np.array([self.parameters.Y_0, self.parameters.pi_r, self.parameters.g_r, self.parameters.g_s, self.parameters.k_1])
-    def get_parameter_array_with_sigma(self):
-        return np.array([self.parameters.Y_0, self.parameters.pi_r, self.parameters.g_r, self.parameters.g_s, self.parameters.k_1, self.parameters.sigma])
-
 # Efficient implementation 
 # Simulates M protein value at times [t + delta_T]_i
 # Y_t is the M protein level at start of time interval
 def generative_model(Y_t, params, delta_T_values, drug_effect):
     return Y_t * params.pi_r * np.exp(params.g_r * delta_T_values) + Y_t * (1-params.pi_r) * np.exp((params.g_s - drug_effect) * delta_T_values)
 
-def generate_resistant_Mprotein(Y_t, params, delta_T_values, drug_effect):
-    return Y_t * params.pi_r * np.exp(params.g_r * delta_T_values)
-
-def generate_sensitive_Mprotein(Y_t, params, delta_T_values, drug_effect):
-    return Y_t * (1-params.pi_r) * np.exp((params.g_s - drug_effect) * delta_T_values)
-
 # Input: a Parameter object, a numpy array of time points in days, a list of back-to-back Treatment objects
 def measure_Mprotein_noiseless(params, measurement_times, treatment_history):
     Mprotein_values = np.zeros_like(measurement_times)
     Y_t = params.Y_0
-    pi_r_t = params.pi_r
-    t_params = Parameters(Y_t, pi_r_t, params.g_r, params.g_s, params.k_1, params.sigma)
     for treat_index in range(len(treatment_history)):
         # Find the correct drug effect k_1
         this_treatment = treatment_history[treat_index]
         if this_treatment.id == 0:
             drug_effect = 0
         elif this_treatment.id == 1:
-            drug_effect = t_params.k_1
+            drug_effect = params.k_1
         else:
             print("Encountered treatment id with unspecified drug effect in function: measure_Mprotein")
             sys.exit("Encountered treatment id with unspecified drug effect in function: measure_Mprotein")
@@ -85,18 +64,11 @@ def measure_Mprotein_noiseless(params, measurement_times, treatment_history):
         delta_T_values = np.concatenate((delta_T_values, np.array([this_treatment.end - this_treatment.start])))
 
         # Calculate Mprotein values
-        # resistant 
-        resistant_mprotein = generate_resistant_Mprotein(Y_t, t_params, delta_T_values, drug_effect)
-        # sensitive
-        sensitive_mprotein = generate_sensitive_Mprotein(Y_t, t_params, delta_T_values, drug_effect)
-        # summed
-        recorded_and_endtime_mprotein_values = resistant_mprotein + sensitive_mprotein
+        recorded_and_endtime_mprotein_values = generative_model(Y_t, params, delta_T_values, drug_effect)
         # Assign M protein values for measurement times that are in this treatment period
         Mprotein_values[correct_times] = recorded_and_endtime_mprotein_values[0:-1]
         # Store Mprotein value at the end of this treatment:
         Y_t = recorded_and_endtime_mprotein_values[-1]
-        pi_r_t = resistant_mprotein[-1] / (resistant_mprotein[-1] + sensitive_mprotein[-1])
-        t_params = Parameters(Y_t, pi_r_t, t_params.g_r, t_params.g_s, t_params.k_1, t_params.sigma)
     return Mprotein_values
 
 # Input: a Parameter object, a numpy array of time points in days, a list of back-to-back Treatment objects
@@ -134,9 +106,8 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
     # Plot true M protein values according to true parameters
     end_of_history = treatment_history[-1].end
     plotting_mprotein_values = measure_Mprotein_noiseless(true_parameters, plotting_times, treatment_history)
-    # Count resistant part
-    resistant_parameters = Parameters((true_parameters.Y_0*true_parameters.pi_r), 1, true_parameters.g_r, true_parameters.g_s, true_parameters.k_1, true_parameters.sigma)
-    plotting_resistant_mprotein_values = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
+    if PLOT_ESTIMATES:
+        estimated_mprotein_values = measure_Mprotein_noiseless(estimated_parameters, plotting_times, treatment_history)
 
     # Plot M protein values
     plotheight = 1
@@ -145,16 +116,12 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
 
     fig, ax1 = plt.subplots()
     ax1.patch.set_facecolor('none')
-    # Plot sensitive and resistant
-    ax1.plot(plotting_times, plotting_resistant_mprotein_values, linestyle='-', marker='', zorder=3, color='r', label="True M protein (resistant)")
-    # Plot total M protein
-    ax1.plot(plotting_times, plotting_mprotein_values, linestyle='-', marker='', zorder=3, color='k', label="True M protein (total)")
+    ax1.plot(plotting_times, plotting_mprotein_values, linestyle='-', marker='', zorder=3, color='k')
     if PLOT_ESTIMATES:
         # Plot estimtated Mprotein line
-        estimated_mprotein_values = measure_Mprotein_noiseless(estimated_parameters, plotting_times, treatment_history)
-        ax1.plot(plotting_times, estimated_mprotein_values, linestyle='--', linewidth=2, marker='', zorder=3, color='b', label="Estimated M protein")
+        ax1.plot(plotting_times, estimated_mprotein_values, linestyle='-', marker='', zorder=3, color='r')
 
-    ax1.plot(measurement_times, M_protein_observations, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
+    ax1.plot(measurement_times_patient_1, M_protein_observations, linestyle='', marker='x', zorder=3, color='k')
 
     # Plot treatments
     ax2 = ax1.twinx() 
@@ -181,8 +148,6 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
     ax2.set_yticklabels(range(maxdrugkey+1))
     #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
     ax1.set_zorder(ax1.get_zorder()+3)
-    ax1.legend()
-    ax2.legend()
     fig.tight_layout()
     if PLOT_ESTIMATES:
         plt.savefig("./patient_truth_and_observations_with_model_fit.pdf")
@@ -193,10 +158,9 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
 
 
 #####################################
-# Generate data 
+# Parameters
 #####################################
-# Shared parameters
-#####################################
+## Shared parameters
 global_sigma = 1  #Measurement noise
 # Drug effects: 
 # map id=1 to effect=k_1
@@ -208,27 +172,23 @@ global_sigma = 1  #Measurement noise
 # With drug: A halving  time of 2 months = 60 days means that X1/X0 = 1/2 = e^(60*alpha) ==> alpha = log(1/2)/60 = approx. -0.005 1/days
 # Encoding cost of resistance giving resistant cells a lower base growth rate than sensitive cells 
 
-"""
-#####################################
-# Patient 1
-#####################################
 # With drug effect and growth rate parameters:
 #parameters_patient_1 = Parameters(Y_0=50, pi_r=0.10, g_r=0.008, g_s=0.010, k_1=0.020, sigma=global_sigma)
 # With bulk growth rates on treatment:
+parameters_patient_1 = Parameters(Y_0=50, pi_r=0.20, g_r=0.040, g_s=-0.200, k_1=0.000, sigma=global_sigma)
 #parameters_patient_1 = Parameters(Y_0=50, pi_r=0.01, g_r=0.008, g_s=-0.010, k_1=0.000, sigma=global_sigma)
-parameters_patient_1 = Parameters(Y_0=50, pi_r=0.01, g_r=0.040, g_s=-0.200, k_1=0.000, sigma=global_sigma)
 
 # Measure M protein
-Mprotein_recording_interval_patient_1 = 10 #every X days
-N_Mprotein_measurements_patient_1 = 5 # for N*X days
-measurement_times_patient_1 = Mprotein_recording_interval_patient_1 * np.linspace(0,N_Mprotein_measurements_patient_1,N_Mprotein_measurements_patient_1+1)
+Mprotein_recording_interval = 10 #every X days
+N_Mprotein_measurements = 5 # for N*X days
+measurement_times_patient_1 = Mprotein_recording_interval * np.linspace(0,N_Mprotein_measurements,N_Mprotein_measurements+1)
 
+#####################################
+# Generate data 
+#####################################
 # Simplest case: Only one treatment period
 T_1_p_1 = Treatment(start=0, end=measurement_times_patient_1[-1], id=1)
 treatment_history_patient_1 = [T_1_p_1]
-
-patient_1 = Patient(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1)
-patient_1.plot()
 
 print("Measurement times patient 1", measurement_times_patient_1)
 
@@ -256,8 +216,8 @@ plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_pati
 params_to_be_inferred = np.array([parameters_patient_1.Y_0, parameters_patient_1.pi_r, parameters_patient_1.g_r, parameters_patient_1.g_s])
 # For inferring bulk growth rates
 #               Y_0, pi_r,   g_r,   g_s,
-lb = np.array([   0,    0, -1.00, -2.00])
-ub = np.array([1000,    1,  1.00,  2.00])
+lb = np.array([   0,    0, -1.00, -1.00])
+ub = np.array([1000,    1,  1.00,  1.00])
 bounds_Y_0 = (lb[0], ub[0])
 bounds_pi_r = (lb[1], ub[1])
 bounds_g_r = (lb[2], ub[2])
@@ -301,81 +261,4 @@ print("f value at estimate:", lowest_f_value)
 
 estimated_parameters = Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=0.000, sigma=global_sigma)
 plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1, estimated_parameters=estimated_parameters, PLOT_ESTIMATES=True)
-"""
-
-#####################################
-# Patient 2
-#####################################
-# With k drug effect and growth rate parameters:
-parameters_patient_2 = Parameters(Y_0=50, pi_r=0.01, g_r=0.020, g_s=0.100, k_1=0.200, sigma=global_sigma)
-
-# Measure M protein
-Mprotein_recording_interval_patient_2 = 10 #every X days
-N_Mprotein_measurements_patient_2 = 20 # for N*X days
-measurement_times_patient_2 = Mprotein_recording_interval_patient_2 * np.linspace(0,N_Mprotein_measurements_patient_2,N_Mprotein_measurements_patient_2+1)
-
-shhh=0
-treatment_history_patient_2 = [
-    Treatment(start=0, end=measurement_times_patient_2[3+shhh], id=1),
-    Treatment(start=measurement_times_patient_2[3+shhh], end=measurement_times_patient_2[4+shhh], id=0),
-    Treatment(start=measurement_times_patient_2[4+shhh], end=measurement_times_patient_2[5+shhh], id=1),
-    Treatment(start=measurement_times_patient_2[5+shhh], end=measurement_times_patient_2[7+shhh], id=0),
-    Treatment(start=measurement_times_patient_2[7+shhh], end=measurement_times_patient_2[-2], id=1),
-    Treatment(start=measurement_times_patient_2[-2], end=measurement_times_patient_2[-1], id=0),
-    ]
-
-patient_2 = Patient(parameters_patient_2, measurement_times_patient_2, treatment_history_patient_2)
-patient_2.plot()
-
-## Inference
-# For inferring both k_1 and growth rates
-#               Y_0, pi_r,   g_r,   g_s,  k_1
-lb = np.array([   0,    0, -1.00, -2.00, 0.00])
-ub = np.array([1000,    1,  1.00,  2.00, 2.00])
-
-param_array_patient_2 = patient_2.get_parameter_array_without_sigma()
-
-bounds_Y_0 = (lb[0], ub[0])
-bounds_pi_r = (lb[1], ub[1])
-bounds_g_r = (lb[2], ub[2])
-bounds_g_s = (lb[3], ub[3])
-bounds_k_1 = (lb[4], ub[4])
-all_bounds = (bounds_Y_0, bounds_pi_r, bounds_g_r, bounds_g_s, bounds_k_1)
-
-def least_squares_objective_function(array_x, patient):
-    measurement_times = patient.measurement_times
-    treatment_history = patient.treatment_history
-    observations = patient.observed_values
-
-    Parameter_object_x = Parameters(Y_0=array_x[0], pi_r=array_x[1], g_r=array_x[2], g_s=array_x[3], k_1=array_x[4], sigma=global_sigma)
-    predictions = measure_Mprotein_noiseless(Parameter_object_x, measurement_times, treatment_history)
-    sumofsquares = np.sum((observations - predictions)**2)
-    return sumofsquares
-
-random_samples = np.random.uniform(0,1,len(ub))
-x0_0 = lb + np.multiply(random_samples, (ub-lb))
-
-lowest_f_value = np.inf
-best_x = np.array([0,0,0,0,0])
-for iteration in range(10000):
-    random_samples = np.random.uniform(0,1,len(ub))
-    x0 = lb + np.multiply(random_samples, (ub-lb))
-    optimization_result = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient_2), bounds=all_bounds, options={'disp':False})
-    if optimization_result.fun < lowest_f_value:
-        lowest_f_value = optimization_result.fun
-        best_x = optimization_result.x
-
-print("Compare truth with estimate:")
-print("True x:", param_array_patient_2)
-print("Inferred x:", best_x)
-
-f_value_at_truth = least_squares_objective_function(param_array_patient_2, patient_2)
-x0_value = least_squares_objective_function(x0_0, patient_2)
-
-print("f value at first x0:", x0_value)
-print("f value at truth:", f_value_at_truth)
-print("f value at estimate:", lowest_f_value)
-
-estimated_parameters = Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=global_sigma)
-plot_true_mprotein_with_observations_and_treatments_and_estimate(patient_2.parameters, measurement_times_patient_2, treatment_history_patient_2, patient_2.observed_values, estimated_parameters=estimated_parameters, PLOT_ESTIMATES=True)
 
