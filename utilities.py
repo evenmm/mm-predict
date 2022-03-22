@@ -28,6 +28,10 @@ class Parameters:
         self.g_s = g_s
         self.k_1 = k_1
         self.sigma = sigma
+    def to_array_without_sigma(self):
+        return np.array([self.Y_0, self.pi_r, self.g_r, self.g_s, self.k_1])
+    def to_array_with_sigma(self):
+        return np.array([self.Y_0, self.pi_r, self.g_r, self.g_s, self.k_1, self.sigma])
 
 class Treatment:
     def __init__(self, start, end, id):
@@ -37,16 +41,15 @@ class Treatment:
 
 class Patient: 
     def __init__(self, parameters, measurement_times, treatment_history):
-        self.parameters = parameters
         self.measurement_times = measurement_times
         self.treatment_history = treatment_history
-        self.observed_values = measure_Mprotein_with_noise(self.parameters, self.measurement_times, self.treatment_history)
-    def plot(self):
-        plot_true_mprotein_with_observations_and_treatments_and_estimate(self.parameters, self.measurement_times, self.treatment_history, self.observed_values, estimated_parameters=[], PLOT_ESTIMATES=False)
-    def get_parameter_array_without_sigma(self):
-        return np.array([self.parameters.Y_0, self.parameters.pi_r, self.parameters.g_r, self.parameters.g_s, self.parameters.k_1])
-    def get_parameter_array_with_sigma(self):
-        return np.array([self.parameters.Y_0, self.parameters.pi_r, self.parameters.g_r, self.parameters.g_s, self.parameters.k_1, self.parameters.sigma])
+        self.observed_values = measure_Mprotein_with_noise(parameters, self.measurement_times, self.treatment_history)
+    def get_measurement_times(self):
+        return self.measurement_times
+    def get_treatment_history(self):
+        return self.treatment_history
+    def get_observed_values(self):
+        return self.observed_values
 
 # Efficient implementation 
 # Simulates M protein value at times [t + delta_T]_i
@@ -126,9 +129,10 @@ def measure_Mprotein_naive(params, measurement_times, treatment_history):
     #return params.Y_0 * params.pi_r * np.exp(params.g_r * measurement_times) + params.Y_0 * (1-params.pi_r) * np.exp((params.g_s - params.k_1) * measurement_times)
 
 #treat_colordict = dict(zip(treatment_line_ids, treat_line_colors))
-def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parameters, measurement_times, treatment_history, M_protein_observations, estimated_parameters=[], PLOT_ESTIMATES=False):
-    # Resolution of 10 points per day, plotting 10 days beyond last treatment
-    #plotting_times = np.linspace(0, int(measurement_times[-1]+10), int((measurement_times[-1]+10+1)*10))
+def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parameters, patient, estimated_parameters=[], PLOT_ESTIMATES=False):
+    measurement_times = patient.get_measurement_times()
+    treatment_history = patient.get_treatment_history()
+    observed_values = patient.get_observed_values()
     plotting_times = np.linspace(0, int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
     
     # Plot true M protein values according to true parameters
@@ -154,7 +158,7 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
         estimated_mprotein_values = measure_Mprotein_noiseless(estimated_parameters, plotting_times, treatment_history)
         ax1.plot(plotting_times, estimated_mprotein_values, linestyle='--', linewidth=2, marker='', zorder=3, color='b', label="Estimated M protein")
 
-    ax1.plot(measurement_times, M_protein_observations, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
+    ax1.plot(measurement_times, observed_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
 
     # Plot treatments
     ax2 = ax1.twinx() 
@@ -197,7 +201,7 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
 #####################################
 # Shared parameters
 #####################################
-global_sigma = 1  #Measurement noise
+global_sigma = 0.1  #Measurement noise
 # Drug effects: 
 # map id=1 to effect=k_1
 # map id=2 to effect=k_2
@@ -307,25 +311,26 @@ plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_pati
 # Patient 2
 #####################################
 # With k drug effect and growth rate parameters:
-parameters_patient_2 = Parameters(Y_0=50, pi_r=0.10, g_r=0.020, g_s=0.100, k_1=0.200, sigma=global_sigma)
+parameters_patient_2 = Parameters(Y_0=50, pi_r=0.10, g_r=0.020, g_s=0.100, k_1=0.300, sigma=global_sigma)
 
 # Measure M protein
 Mprotein_recording_interval_patient_2 = 10 #every X days
-N_Mprotein_measurements_patient_2 = 5 # for N*X days
+N_Mprotein_measurements_patient_2 = 4 # for N*X days
 measurement_times_patient_2 = Mprotein_recording_interval_patient_2 * np.linspace(0,N_Mprotein_measurements_patient_2,N_Mprotein_measurements_patient_2+1)
 
 treatment_history_patient_2 = [
-    Treatment(start=0, end=measurement_times_patient_2[1], id=1),
-    Treatment(start=measurement_times_patient_2[1], end=measurement_times_patient_2[2], id=0),
-    Treatment(start=measurement_times_patient_2[2], end=measurement_times_patient_2[3], id=1),
-    Treatment(start=measurement_times_patient_2[3], end=measurement_times_patient_2[4], id=1),
-    Treatment(start=measurement_times_patient_2[4], end=measurement_times_patient_2[5], id=0),
+    Treatment(start=0, end=measurement_times_patient_2[2], id=1),
+    Treatment(start=measurement_times_patient_2[2], end=measurement_times_patient_2[4], id=0),
+    #Treatment(start=measurement_times_patient_2[1], end=measurement_times_patient_2[2], id=0),
+    #Treatment(start=measurement_times_patient_2[2], end=measurement_times_patient_2[3], id=1),
+    #Treatment(start=measurement_times_patient_2[3], end=measurement_times_patient_2[4], id=1),
+    #Treatment(start=measurement_times_patient_2[4], end=measurement_times_patient_2[5], id=0),
     #Treatment(start=measurement_times_patient_2[5], end=measurement_times_patient_2[7], id=0),
     #Treatment(start=measurement_times_patient_2[7], end=measurement_times_patient_2[-1], id=1),
     ]
 
 patient_2 = Patient(parameters_patient_2, measurement_times_patient_2, treatment_history_patient_2)
-patient_2.plot()
+plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_2, patient_2, estimated_parameters=[], PLOT_ESTIMATES=False)
 
 ## Inference
 # For inferring both k_1 and growth rates
@@ -333,7 +338,7 @@ patient_2.plot()
 lb = np.array([   0,    0,  0.00,  0.00, 0.00])
 ub = np.array([1000,    1,  2.00,  2.00, 2.00])
 
-param_array_patient_2 = patient_2.get_parameter_array_without_sigma()
+param_array_patient_2 = parameters_patient_2.to_array_without_sigma()
 
 bounds_Y_0 = (lb[0], ub[0])
 bounds_pi_r = (lb[1], ub[1])
@@ -377,5 +382,5 @@ print("f value at truth:", f_value_at_truth)
 print("f value at estimate:", lowest_f_value)
 
 estimated_parameters = Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=global_sigma)
-plot_true_mprotein_with_observations_and_treatments_and_estimate(patient_2.parameters, measurement_times_patient_2, treatment_history_patient_2, patient_2.observed_values, estimated_parameters=estimated_parameters, PLOT_ESTIMATES=True)
+plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_2, patient_2, estimated_parameters=estimated_parameters, PLOT_ESTIMATES=True)
 
