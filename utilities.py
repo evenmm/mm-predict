@@ -4,6 +4,7 @@ from matplotlib.patches import Rectangle
 import sys
 from scipy import optimize
 from scipy.optimize import least_squares
+from copy import deepcopy
 
 np.random.seed(42)
 from numpy.random import MT19937
@@ -16,10 +17,52 @@ rs = RandomState(MT19937(SeedSequence(123456789)))
 # The atomic unit of time is 1 day
 # Treatment lines must be back to back: Start of a treatment must equal end of previous treatment
 # Growth rates are in unit 1/days
+# 22.03.22 treatment in terms of different drugs
+
+drug_dictionary = np.load("drug_dictionary.npy", allow_pickle=True).item()
+treatment_to_id_dictionary = np.load("treatment_to_id_dictionary.npy", allow_pickle=True).item()
+treatment_id_to_drugs_dictionary = {v: k for k, v in treatment_to_id_dictionary.items()}
+
+#unique_drugs = ['Revlimid (lenalidomide)', 'Cyclophosphamide', 'Pomalidomide',
+# 'Thalidomide', 'Velcade (bortezomib) - subcut twice weekly',
+# 'Dexamethasone', 'Velcade (bortezomib) - subcut once weekly', 'Carfilzomib',
+# 'Melphalan', 'Panobinostat', 'Daratumumab', 'Velcade i.v. twice weekly',
+# 'Bendamustin', 'Methotrexate i.t.', 'Prednisolon', 'pembrolizumab',
+# 'Pembrolizumab', 'Doxorubicin', 'Velcade i.v. once weekly', 'Vincristine',
+# 'Ibrutinib', 'lxazomib', 'Cytarabin i.t.', 'Solu-Medrol',
+# 'Velcade s.c. every 2nd week', 'Clarithromycin', 'hydroxychloroquine',
+# 'Metformin', 'Rituximab']
+#drug_ids = range(len(unique_drugs))
+#drug_dictionary = dict(zip(unique_drugs, drug_ids))
+#unique_treatment_lines = []
+#drug_ids = range(len(unique_treatment_lines))
+#treatment_to_id_dictionary = dict(zip(unique_treatment_lines, treatment_line_ids))
 
 #####################################
 # Classes, functions
 #####################################
+
+class Cell_population:
+    # alpha is the growth rate with no drug
+    # k_d is the additive effect of drug d on the growth rate
+    def __init__(self, alpha, k_1, k_2, k_3, k_4, k_5, k_6, k_7, k_8, k_9):
+        self.alpha = alpha
+        self.k_1 = k_1
+        self.k_2 = k_2
+        self.k_3 = k_3
+        self.k_4 = k_4
+        self.k_5 = k_5
+        self.k_6 = k_6
+        self.k_7 = k_7
+        self.k_8 = k_8
+        self.k_9 = k_9
+        self.drug_effects = [k_1, k_2, k_3, k_4, k_5, k_6, k_7, k_8, k_9]
+    def get_growth_rate(self, treatment):
+        this_drug_array = treatment.get_drug_ids()
+        drug_effect_filter = [drug_id in this_drug_array for drug_id in range(len(self.drug_effects))]
+        print(drug_effect_filter)
+        return self.alpha - sum(self.drug_effects[drug_effect_filter])
+
 class Parameters: 
     def __init__(self, Y_0, pi_r, g_r, g_s, k_1, sigma):
         self.Y_0 = Y_0
@@ -38,12 +81,15 @@ class Treatment:
         self.start = start
         self.end = end
         self.id = id
+    def get_drug_ids(self):
+        return [drug_dictionary[drug_name] for drug_name in treatment_id_to_drugs_dictionary[self.id]]
 
 class Patient: 
-    def __init__(self, parameters, measurement_times, treatment_history):
+    def __init__(self, parameters, measurement_times, treatment_history, covariates = []):
         self.measurement_times = measurement_times
         self.treatment_history = treatment_history
         self.observed_values = measure_Mprotein_with_noise(parameters, self.measurement_times, self.treatment_history)
+        self.covariates = covariates
     def get_measurement_times(self):
         return self.measurement_times
     def get_treatment_history(self):
@@ -329,9 +375,9 @@ treatment_history_patient_2 = [
     #Treatment(start=measurement_times_patient_2[7], end=measurement_times_patient_2[-1], id=1),
     ]
 
-patient_2 = Patient(parameters_patient_2, measurement_times_patient_2, treatment_history_patient_2)
+patient_2 = Patient(parameters_patient_2, measurement_times_patient_2, treatment_history_patient_2, covariates = [0])
+"""
 plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_2, patient_2, estimated_parameters=[], PLOT_ESTIMATES=False)
-
 ## Inference
 # For inferring both k_1 and growth rates
 #               Y_0, pi_r,   g_r,   g_s,  k_1
@@ -383,4 +429,46 @@ print("f value at estimate:", lowest_f_value)
 
 estimated_parameters = Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=global_sigma)
 plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_2, patient_2, estimated_parameters=estimated_parameters, PLOT_ESTIMATES=True)
+"""
+
+#####################################################
+# Learn effect of history on drug response parameters 
+from sklearn.datasets import make_regression
+from sklearn.linear_model import LinearRegression
+# create dataset
+
+parameters_patient_3 = Parameters(Y_0=50, pi_r=0.10, g_r=0.020, g_s=0.100, k_1=0.300, sigma=global_sigma)
+parameters_patient_4 = Parameters(Y_0=50, pi_r=0.90, g_r=0.020, g_s=0.100, k_1=0.300, sigma=global_sigma)
+parameters_patient_5 = Parameters(Y_0=50, pi_r=0.90, g_r=0.020, g_s=0.100, k_1=0.300, sigma=global_sigma)
+patient_3 = deepcopy(patient_2)
+
+patient_4 = deepcopy(patient_2)
+patient_4.covariates = [1]
+patient_5 = deepcopy(patient_4)
+print(patient_5.covariates)
+
+# n = 4, p = 1, len(Y) = 4
+X = np.zeros((4,1))
+X[0,:] = patient_2.covariates
+X[1,:] = patient_3.covariates
+X[2,:] = patient_4.covariates
+X[3,:] = patient_5.covariates
+print(X)
+y = np.zeros((4,4))
+y[0,:] = parameters_patient_2.to_array_without_sigma()[1:5]
+y[1,:] = parameters_patient_3.to_array_without_sigma()[1:5]
+y[2,:] = parameters_patient_4.to_array_without_sigma()[1:5]
+y[3,:] = parameters_patient_5.to_array_without_sigma()[1:5]
+print(y)
+#X, y = make_regression(n_samples=1000, n_features=10, n_informative=5, n_targets=2, random_state=1, noise=0.5)
+# define model
+model = LinearRegression()
+# fit model
+model.fit(X, y)
+# make a prediction
+test_covariates = [0]
+#row = [0.21947749, 0.32948997, 0.81560036, 0.440956, -0.0606303, -0.29257894, -0.2820059, -0.00290545, 0.96402263, 0.04992249]
+yhat = model.predict([test_covariates])
+# summarize prediction
+print(yhat[0])
 
