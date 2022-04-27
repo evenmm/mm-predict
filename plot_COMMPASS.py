@@ -525,6 +525,35 @@ ax2 = ax1.twinx()
 plotheight = 1
 maxdrugkey = 0
 patient_count = 0
+row_index_drugs_file = 0
+# Plot the drugs  ##########################################
+while not df_drugs_and_dates.loc[row_index_drugs_file,['PUBLIC_ID']][0] == PUBLIC_ID:
+    row_index_drugs_file = row_index_drugs_file + 1
+
+while df_drugs_and_dates.loc[row_index_drugs_file,['PUBLIC_ID']][0] == PUBLIC_ID:
+    # Plot treatments
+    treat_dates = np.array(df_drugs_and_dates.loc[row_index_drugs_file, ['startday', 'stopday']])
+
+    # First drug entry: Treatments that last more than 1 day 
+    drug_interval_1 = treat_dates[0:2] # For the first drug combination
+    treatment_time_1 = drug_interval_1[1] - drug_interval_1[0]
+    #print(treatment_time_1)
+    drugs_1 = np.array(df_drugs_and_dates.loc[row_index_drugs_file, ['MMTX_THERAPY']])
+    # Remove cases with missing end dates
+    missing_date_bool = isNaN(drug_interval_1).any()
+    if not missing_date_bool: 
+        count_treatments = count_treatments+1
+        # Remove nan drugs
+        drugs_1 = drugs_1[~isNaN(drugs_1)]
+        for ii in range(len(drugs_1)):
+            drugkey = drug_dictionary[drugs_1[ii]]
+            if drugkey > maxdrugkey:
+                maxdrugkey = drugkey
+            ax2.add_patch(Rectangle((drug_interval_1[0], drugkey - plotheight/2), treatment_time_1, plotheight, zorder=2, color=drug_colordict[drugkey]))
+
+    row_index_drugs_file = row_index_drugs_file + 1
+########################################################################################################################################################################
+count_hist_data = []
 for row_index in range(len(df_mprotein_and_dates)):
     # Check if it's the same patient.
     # If it's a new patient, then save plot and initialize new figure with new PUBLIC_ID
@@ -541,12 +570,14 @@ for row_index in range(len(df_mprotein_and_dates)):
         fig.autofmt_xdate()
         fig.tight_layout()
         # Only save the plot if there are at least 3 M protein measurements
+        count_hist_data.append(count_mprotein)
         if count_mprotein > 2 and count_treatments > 0:
             patient_count = patient_count + 1
             plt.savefig("./COMMPASS_Mproteinplots/" + str(PUBLIC_ID) + ".pdf")
-        plt.show()
+        #plt.show()
         plt.close()
 
+        # New patient: We plot the drugs at the beginning
         PUBLIC_ID = df_mprotein_and_dates.loc[row_index,['PUBLIC_ID']][0]
         count_mprotein = 0
         count_treatments = 0
@@ -561,50 +592,33 @@ for row_index in range(len(df_mprotein_and_dates)):
         ax2 = ax1.twinx() 
         maxdrugkey = 0
 
-#    # Plot treatments
-#    treat_dates = np.array(df_drugs_and_dates.loc[row_index, ['startday', 'stopday']])
-#
-#    # First drug entry: Treatments that last more than 1 day 
-#    drug_interval_1 = treat_dates[0:2] # For the first drug combination
-#    treatment_time_1 = drug_interval_1[1] - drug_interval_1[0]
-#    #print(treatment_time_1)
-#    drugs_1 = np.array(df_drugs_and_dates.loc[row_index, ['MMTX_THERAPY']])
-#    # Remove cases with missing end dates
-#    missing_date_bool = isNaN(drug_interval_1).any()
-#    if not missing_date_bool: 
-#        count_treatments = count_treatments+1
-#        # Remove nan drugs
-#        drugs_1 = drugs_1[~isNaN(drugs_1)]
-#        for ii in range(len(drugs_1)):
-#            drugkey = drug_dictionary[drugs_1[ii]]
-#            if drugkey > maxdrugkey:
-#                maxdrugkey = drugkey
-#            #if treatment_time_1 > datetime.timedelta(days=10):
-#            #             Rectangle(             xy              , width           , height, angle=0.0, ...)
-#            ax2.add_patch(Rectangle((drug_interval_1[0], drugkey - plotheight/2), treatment_time_1, plotheight, zorder=2, color=drug_colordict[drugkey]))
-#            #else:
-#            #ax2.plot(drug_interval_1, [drugkey, drugkey], linestyle='-', linewidth=10, marker='D', zorder=2, color=drug_colordict[drugkey])
-#
-#    # Second drug entry: Single day treatments
-#    drug_interval_2 = treat_dates[2:4] # For the second drug combination
-#    treatment_time_2 = drug_interval_2[1] - drug_interval_2[0]
-#    #print(treatment_time_2)
-#    drugs_2 = np.array(df_drugs_and_dates.loc[row_index, ['MMTX_THERAPY']])
-#    # Remove cases with missing end dates
-#    missing_date_bool = isNaN(drug_interval_2).any()
-#    if not missing_date_bool: 
-#        count_treatments = count_treatments+1
-#        # Remove nan drugs
-#        drugs_2 = drugs_2[~isNaN(drugs_2)]
-#        for ii in range(len(drugs_2)):
-#            drugkey = drug_dictionary[drugs_2[ii]]
-#            if drugkey > maxdrugkey:
-#                maxdrugkey = drugkey
-#            #if treatment_time_1 > datetime.timedelta(days=10):
-#            #             Rectangle(             xy              , width           , height, angle=0.0, ...)
-#            ax2.add_patch(Rectangle((drug_interval_2[0], drugkey - plotheight/2), treatment_time_2, plotheight, zorder=2, color=drug_colordict[drugkey]))
-#            #else:
-#            #ax2.plot(drug_interval_2, [drugkey, drugkey], linestyle='-', linewidth=10, marker='D', zorder=2, color=drug_colordict[drugkey])
+        # Plot the drugs  ##########################################
+        while not df_drugs_and_dates.loc[row_index_drugs_file,['PUBLIC_ID']][0] == PUBLIC_ID:
+            row_index_drugs_file = row_index_drugs_file + 1
+
+        while df_drugs_and_dates.loc[row_index_drugs_file,['PUBLIC_ID']][0] == PUBLIC_ID:
+            # Plot treatments
+            treat_dates = np.array(df_drugs_and_dates.loc[row_index_drugs_file, ['startday', 'stopday']])
+        
+            # First drug entry: Treatments that last more than 1 day 
+            drug_interval_1 = treat_dates[0:2] # For the first drug combination
+            treatment_time_1 = drug_interval_1[1] - drug_interval_1[0]
+            #print(treatment_time_1)
+            drugs_1 = np.array(df_drugs_and_dates.loc[row_index_drugs_file, ['MMTX_THERAPY']])
+            # Remove cases with missing end dates
+            missing_date_bool = isNaN(drug_interval_1).any()
+            if not missing_date_bool: 
+                count_treatments = count_treatments+1
+                # Remove nan drugs
+                drugs_1 = drugs_1[~isNaN(drugs_1)]
+                for ii in range(len(drugs_1)):
+                    drugkey = drug_dictionary[drugs_1[ii]]
+                    if drugkey > maxdrugkey:
+                        maxdrugkey = drugkey
+                    ax2.add_patch(Rectangle((drug_interval_1[0], drugkey - plotheight/2), treatment_time_1, plotheight, zorder=2, color=drug_colordict[drugkey]))
+
+            row_index_drugs_file = row_index_drugs_file + 1
+########################################################################################################################################################################
 
     # Plot Mprotein values at corresponding dates
     dates = df_mprotein_and_dates.loc[row_index, ['VISITDY']]
@@ -633,13 +647,29 @@ ax2.set_yticklabels(range(maxdrugkey+1))
 ax1.set_zorder(ax1.get_zorder()+3)
 fig.autofmt_xdate()
 fig.tight_layout()
+count_hist_data.append(count_mprotein)
 if count_mprotein > 2 and count_treatments > 0:
     patient_count = patient_count + 1
     plt.savefig("./COMMPASS_Mproteinplots/" + str(PUBLIC_ID) + ".pdf")
-plt.show()
+#plt.show()
 plt.close()
 
 print("There are "+str(patient_count)+" patients that satisfy the criteria for inclusion.")
+
+# Histogram of number of M protein measurements 
+plt.figure()
+plt.hist(count_hist_data, bins = max(count_hist_data))
+plt.title("Histogram of number of M protein measurements ") #, y=1.02)
+plt.xlabel("Number of M protein measurements") #, labelpad=14)
+plt.ylabel("Count") #, labelpad=14)
+plt.xticks()
+plt.savefig("./COMMPASS_Mprotein_count_histogram.pdf")
+plt.show()
+plt.close()
+
+data_treat_line_1 = df_treatment_lines[["Treatment line 1"]]
+sns.set(font_scale=0.6)
+data_treat_line_1.value_counts().plot(kind='bar', figsize=(7, 6), rot=0)
 
 #################################################################################################################
 # Treatment lines and M protein history plot
