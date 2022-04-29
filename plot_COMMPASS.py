@@ -27,8 +27,16 @@ print(df.head(n=5))
 #    print(col)
 # Columns with dates, drugs or mproteins
 df_mprotein_and_dates = df[['PUBLIC_ID', 'VISIT', 'VISITDY',
-'D_LAB_serum_m_protein', 
+'D_LAB_serum_m_protein',
+'D_IM_LIGHT_CHAIN_BY_FLOW', #"kappa" or "lambda"
+'D_LAB_serum_kappa', # Serum Kappa (mg/dL)
+'D_LAB_serum_lambda', # Serum Lambda (mg/dL)
+'D_IM_kaplam'
 ]]
+print(df_mprotein_and_dates.head(n=5))
+
+# Remove lines with nan times 
+df_mprotein_and_dates = df_mprotein_and_dates[df_mprotein_and_dates['VISITDY'].notna()]
 
 raw_unique_nnid = pd.unique(df_mprotein_and_dates[['PUBLIC_ID']].values.ravel('K'))
 nan_mask_nnid = ~isNaN(raw_unique_nnid)
@@ -47,34 +55,20 @@ df_drugs_and_dates = df[[
     'PUBLIC_ID', 'MMTX_THERAPY', 
     'startday', 'stopday'
 ]]
+#################################################################################################################
+## Make dictionary of drugs, where the key is the drug names, the value is the id
+#################################################################################################################
 raw_unique_drugs = pd.unique(df_drugs_and_dates[['MMTX_THERAPY']].values.ravel('K'))
-nan_mask_drugs = ~isNaN(raw_unique_drugs)
-unique_drugs = raw_unique_drugs[nan_mask_drugs]
+unique_drugs = raw_unique_drugs[~isNaN(raw_unique_drugs)]
 drug_ids = range(len(unique_drugs))
 number_of_unique_drugs = len(unique_drugs)
 print("There are "+str(number_of_unique_drugs)+" unique drugs.")
-print(unique_drugs)
 drug_dictionary = dict(zip(unique_drugs, drug_ids))
 print(drug_dictionary)
 np.save("drug_dictionary_COMMPASS.npy", drug_dictionary)
 #print(df_drugs_and_dates.head(n=5))
 
 """
-#################################################################################################################
-## Make dictionary of drugs, where the key is the drug names, the value is the id
-#################################################################################################################
-raw_unique_drugs = pd.unique(df_mprotein_and_dates[['Drug 1', 'Drug 2', 'Drug 3', 'Drug 4', 'Drug 1.1', 'Drug 2.1', 'Drug 3.1', 'Drug 4.1']].values.ravel('K'))
-nan_mask_drugs = ~isNaN(raw_unique_drugs)
-unique_drugs = raw_unique_drugs[nan_mask_drugs]
-drug_ids = range(len(unique_drugs))
-number_of_unique_drugs = len(unique_drugs)
-print("There are "+str(number_of_unique_drugs)+" unique drugs.")
-print(unique_drugs)
-drug_dictionary = dict(zip(unique_drugs, drug_ids))
-print(drug_dictionary)
-#np.save("drug_dictionary.npy", drug_dictionary)
-
-
 #################################################################################################################
 ## Make dictionary of treatment lines, where the key is a frozenset of drug names, the value is the id
 #################################################################################################################
@@ -118,7 +112,7 @@ print("\nThere are "+str(number_of_unique_treatment_lines)+" unique treatment_li
 #print(unique_treatment_lines)
 treatment_to_id_dictionary = dict(zip(unique_treatment_lines, treatment_line_ids))
 print(treatment_to_id_dictionary)
-np.save("treatment_to_id_dictionary.npy", treatment_to_id_dictionary)
+np.save("treatment_to_id_dictionary_COMMPASS.npy", treatment_to_id_dictionary)
 
 # Add a column with treatment line ids
 # Not looking at single day treatments of Melphalan; 2-day of Melphalan+Carfilzomib, or Cyclophosphamide: 'Drug 1.1', 'Drug 2.1', 'Drug 3.1', 'Drug 4.1'
@@ -487,7 +481,7 @@ for row_index in range(len(df_selected_mprotein_and_dates)):
 #ax1.set_title("Patients receiving combo " + str(correct_patient_history[0]) + " after combo " + str(correct_patient_history[1]))
 ax1.set_title("Patients receiving combo " + str(correct_patient_history[0]) + " as first treatment")
 ax1.set_xlabel("Time (days since treatment start)")
-#ax1.set_ylabel("Serum Mprotein (g/L)")
+#ax1.set_ylabel("Serum Mprotein (g/dL)")
 ax1.set_ylabel("Serum Mprotein / Mprotein at treatment start")
 ax1.set_ylim(bottom=0)
 #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
@@ -497,176 +491,119 @@ fig.tight_layout()
 plt.savefig("./COMMPASS_history_" + str(correct_patient_history) + ".pdf")
 plt.show()
 plt.close()
-
-
-################################################################################################################
-# Plot tree of treatment line histories 
-#################################################################################################################
-
 """
 #################################################################################################################
 # Individual drugs and M protein history plot
 #################################################################################################################
 # For each patient (PUBLIC_ID), we make a figure and plot all the values
-drug_colordict = dict(zip(drug_ids, drug_colors))
-# Initialize PUBLIC_ID
-PUBLIC_ID = df_mprotein_and_dates.loc[1,['PUBLIC_ID']][0]
-count_mprotein = 0
-count_treatments = 0
-fig, ax1 = plt.subplots()
-#plt.setp(ax1.xaxis.get_minorticklabels(), rotation=90)
-#plt.setp(ax1.xaxis.get_majorticklabels(), rotation=90)
-ax1.patch.set_facecolor('none')
-ax1.xaxis.set_major_locator(years)
-ax1.xaxis.set_major_formatter(yearsFmt)
-ax1.xaxis.set_minor_locator(months)
-#ax1.xaxis.set_minor_formatter(monthsFmt)
-ax2 = ax1.twinx() 
+unique_PUBLIC_IDs = pd.unique(df_mprotein_and_dates[['PUBLIC_ID']].values.ravel('K'))
+drug_colordict = dict(zip(drug_dictionary.values(), drug_colors))
 plotheight = 1
-maxdrugkey = 0
-patient_count = 0
-row_index_drugs_file = 0
-# Plot the drugs  ##########################################
-while not df_drugs_and_dates.loc[row_index_drugs_file,['PUBLIC_ID']][0] == PUBLIC_ID:
-    row_index_drugs_file = row_index_drugs_file + 1
 
-while df_drugs_and_dates.loc[row_index_drugs_file,['PUBLIC_ID']][0] == PUBLIC_ID:
-    # Plot treatments
-    treat_dates = np.array(df_drugs_and_dates.loc[row_index_drugs_file, ['startday', 'stopday']])
+def plot_patient(PUBLIC_ID):
+    # Begin figure
+    count_mprotein = 0
+    count_treatments = 0
+    fig, ax1 = plt.subplots()
+    #plt.setp(ax1.xaxis.get_minorticklabels(), rotation=90)
+    #plt.setp(ax1.xaxis.get_majorticklabels(), rotation=90)
+    ax1.patch.set_facecolor('none')
+    ax1.xaxis.set_major_locator(years)
+    ax1.xaxis.set_major_formatter(yearsFmt)
+    ax1.xaxis.set_minor_locator(months)
+    #ax1.xaxis.set_minor_formatter(monthsFmt)
+    ax2 = ax1.twinx() 
+    maxdrugkey = 0
 
-    # First drug entry: Treatments that last more than 1 day 
-    drug_interval_1 = treat_dates[0:2] # For the first drug combination
-    treatment_time_1 = drug_interval_1[1] - drug_interval_1[0]
-    #print(treatment_time_1)
-    drugs_1 = np.array(df_drugs_and_dates.loc[row_index_drugs_file, ['MMTX_THERAPY']])
-    # Remove cases with missing end dates
-    missing_date_bool = isNaN(drug_interval_1).any()
-    if not missing_date_bool: 
-        count_treatments = count_treatments+1
-        # Remove nan drugs
-        drugs_1 = drugs_1[~isNaN(drugs_1)]
-        for ii in range(len(drugs_1)):
-            drugkey = drug_dictionary[drugs_1[ii]]
-            if drugkey > maxdrugkey:
-                maxdrugkey = drugkey
-            ax2.add_patch(Rectangle((drug_interval_1[0], drugkey - plotheight/2), treatment_time_1, plotheight, zorder=2, color=drug_colordict[drugkey]))
-
-    row_index_drugs_file = row_index_drugs_file + 1
-########################################################################################################################################################################
-count_hist_data = []
-for row_index in range(len(df_mprotein_and_dates)):
-    # Check if it's the same patient.
-    # If it's a new patient, then save plot and initialize new figure with new PUBLIC_ID
-    if not (df_mprotein_and_dates.loc[row_index,['PUBLIC_ID']][0] == PUBLIC_ID):
-        ax1.set_title("Patient ID " + str(PUBLIC_ID))
-        ax1.set_xlabel("Time (year)")
-        ax1.set_ylabel("Serum Mprotein (g/L)")
-        ax1.set_ylim(bottom=0)
-        ax2.set_ylabel("Drug")
-        ax2.set_yticks(range(maxdrugkey+1))
-        ax2.set_yticklabels(range(maxdrugkey+1))
-        #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
-        ax1.set_zorder(ax1.get_zorder()+3)
-        fig.autofmt_xdate()
-        fig.tight_layout()
-        # Only save the plot if there are at least 3 M protein measurements
-        count_hist_data.append(count_mprotein)
-        if count_mprotein > 2 and count_treatments > 0:
-            patient_count = patient_count + 1
-            plt.savefig("./COMMPASS_Mproteinplots/" + str(PUBLIC_ID) + ".pdf")
-        #plt.show()
-        plt.close()
-
-        # New patient: We plot the drugs at the beginning
-        PUBLIC_ID = df_mprotein_and_dates.loc[row_index,['PUBLIC_ID']][0]
-        count_mprotein = 0
-        count_treatments = 0
-        fig, ax1 = plt.subplots()
-        #plt.setp(ax1.xaxis.get_minorticklabels(), rotation=90)
-        #plt.setp(ax1.xaxis.get_majorticklabels(), rotation=90)
-        ax1.patch.set_facecolor('none')
-        ax1.xaxis.set_major_locator(years)
-        ax1.xaxis.set_major_formatter(yearsFmt)
-        ax1.xaxis.set_minor_locator(months)
-        #ax1.xaxis.set_minor_formatter(monthsFmt)
-        ax2 = ax1.twinx() 
-        maxdrugkey = 0
-
-        # Plot the drugs  ##########################################
-        while not df_drugs_and_dates.loc[row_index_drugs_file,['PUBLIC_ID']][0] == PUBLIC_ID:
-            row_index_drugs_file = row_index_drugs_file + 1
-
-        while df_drugs_and_dates.loc[row_index_drugs_file,['PUBLIC_ID']][0] == PUBLIC_ID:
-            # Plot treatments
-            treat_dates = np.array(df_drugs_and_dates.loc[row_index_drugs_file, ['startday', 'stopday']])
+    # Plot Mprotein values
+    for index, row in df_mprotein_and_dates.loc[df_mprotein_and_dates['PUBLIC_ID'] == PUBLIC_ID].iterrows():
+        date = row['VISITDY']
+        mprotein_value = row['D_LAB_serum_m_protein']
+        # Suppress cases with missing data for mprotein
+        # nan_mask_mprotein = np.array(mprotein_value.notna())
+        # dates = dates[nan_mask_mprotein]
+        # mprotein_value = mprotein_value[nan_mask_mprotein]
+        # # and for dates
+        # nan_mask_dates = np.array(dates.notna())
+        # dates = dates[nan_mask_dates]
+        # mprotein_value = mprotein_value[nan_mask_dates]
         
-            # First drug entry: Treatments that last more than 1 day 
-            drug_interval_1 = treat_dates[0:2] # For the first drug combination
-            treatment_time_1 = drug_interval_1[1] - drug_interval_1[0]
-            #print(treatment_time_1)
-            drugs_1 = np.array(df_drugs_and_dates.loc[row_index_drugs_file, ['MMTX_THERAPY']])
-            # Remove cases with missing end dates
-            missing_date_bool = isNaN(drug_interval_1).any()
-            if not missing_date_bool: 
-                count_treatments = count_treatments+1
-                # Remove nan drugs
-                drugs_1 = drugs_1[~isNaN(drugs_1)]
-                for ii in range(len(drugs_1)):
-                    drugkey = drug_dictionary[drugs_1[ii]]
-                    if drugkey > maxdrugkey:
-                        maxdrugkey = drugkey
-                    ax2.add_patch(Rectangle((drug_interval_1[0], drugkey - plotheight/2), treatment_time_1, plotheight, zorder=2, color=drug_colordict[drugkey]))
+        if ~np.isnan(mprotein_value): 
+            count_mprotein = count_mprotein+1
 
-            row_index_drugs_file = row_index_drugs_file + 1
-########################################################################################################################################################################
+        ax1.plot(date, mprotein_value, linestyle='', marker='x', zorder=3, color='k')
+        ax1.axvline(date, color="k", linewidth=0.5, linestyle="-")
 
-    # Plot Mprotein values at corresponding dates
-    dates = df_mprotein_and_dates.loc[row_index, ['VISITDY']]
-    mprotein_levels = df_mprotein_and_dates.loc[row_index, ['D_LAB_serum_m_protein']]
-    # Suppress cases with missing data for mprotein
-    nan_mask_mprotein = np.array(mprotein_levels.notna())
-    dates = dates[nan_mask_mprotein]
-    mprotein_levels = mprotein_levels[nan_mask_mprotein]
-    # and for dates
-    nan_mask_dates = np.array(dates.notna())
-    dates = dates[nan_mask_dates]
-    mprotein_levels = mprotein_levels[nan_mask_dates]
-    if len(mprotein_levels) > 0:
-        count_mprotein = count_mprotein+1
+        # Plot light chain (Kappa/Lambda) values at corresponding dates
+        kappa_levels = row['D_LAB_serum_kappa']
+        ax1.plot(date, kappa_levels, linestyle='', marker='x', zorder=2, color='b')
+        lambda_levels = row['D_LAB_serum_lambda']
+        ax1.plot(date, lambda_levels, linestyle='', marker='x', zorder=2, color='r')
+    
+    # Plot the drugs  ##########################################
+    for index, row in df_drugs_and_dates.loc[df_drugs_and_dates['PUBLIC_ID'] == PUBLIC_ID].iterrows():
+        # Plot treatments
+        treat_dates = np.array([row['startday'], row['stopday']])
+    
+        # First drug entry: Treatments that last more than 1 day 
+        drug_interval_1 = treat_dates[0:2] # For the first drug combination
+        treatment_time_1 = drug_interval_1[1] - drug_interval_1[0]
+        #print(treatment_time_1)
+        drugs_1 = np.array(row['MMTX_THERAPY'])
+        # Remove cases with missing end dates
+        missing_date_bool = isNaN(drug_interval_1).any()
+        if not missing_date_bool: 
+            count_treatments = count_treatments+1
+            # Remove nan drugs
+            drugs_1 = drugs_1[~isNaN(drugs_1)]
+            for ii in range(len(drugs_1)):
+                drugkey = drug_dictionary[drugs_1[ii]]
+                if drugkey > maxdrugkey:
+                    maxdrugkey = drugkey
+                ax2.add_patch(Rectangle((drug_interval_1[0], drugkey - plotheight/2), treatment_time_1, plotheight, zorder=2, color=drug_colordict[drugkey]))
 
-    ax1.plot(dates, mprotein_levels, linestyle='', marker='x', zorder=3, color='k')
+    ########################################################################################################################################################################
 
-ax1.set_title("Patient ID " + str(PUBLIC_ID))
-ax1.set_xlabel("Time (year)")
-ax1.set_ylabel("Serum Mprotein (g/L)")
-ax1.set_ylim(bottom=0)
-ax2.set_ylabel("Drug")
-ax2.set_yticks(range(maxdrugkey+1))
-ax2.set_yticklabels(range(maxdrugkey+1))
-#ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
-ax1.set_zorder(ax1.get_zorder()+3)
-fig.autofmt_xdate()
-fig.tight_layout()
-count_hist_data.append(count_mprotein)
-if count_mprotein > 2 and count_treatments > 0:
-    patient_count = patient_count + 1
-    plt.savefig("./COMMPASS_Mproteinplots/" + str(PUBLIC_ID) + ".pdf")
-#plt.show()
-plt.close()
+    # end and save plot:
+    ax1.set_title("Patient ID " + str(PUBLIC_ID))
+    ax1.set_xlabel("Time (year)")
+    ax1.set_ylabel("Serum Mprotein (g/dL)")
+    ax1.set_ylim(bottom=0)
+    ax2.set_ylabel("Drug")
+    ax2.set_yticks(range(maxdrugkey+1))
+    ax2.set_yticklabels(range(maxdrugkey+1))
+    #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
+    ax1.set_zorder(ax1.get_zorder()+3)
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    # Only save the plot if there are at least 3 M protein measurements
+    inclusion_criteria_satisfied = count_mprotein > 2 # and count_treatments > 0
+    if inclusion_criteria_satisfied:
+        plt.savefig("./COMMPASS_Mproteinplots/" + str(PUBLIC_ID) + ".png")
+    #plt.show()
+    plt.close()
+    return [count_mprotein, count_treatments, inclusion_criteria_satisfied]
 
-print("There are "+str(patient_count)+" patients that satisfy the criteria for inclusion.")
+# Plot them all and capture the M protein counts in the same line
+# patient output: [count_mprotein, count_treatments, inclusion_criteria_satisfied]
+patient_output = [plot_patient(public_id) for public_id in unique_PUBLIC_IDs]
+counts_mprotein, counts_treatments, counts_inclusion_criteria_satisfied = [[pat_out[iii] for pat_out in patient_output] for iii in [0,1,2]]
+
+print("There are "+str(sum(counts_inclusion_criteria_satisfied))+" patients that satisfy the criteria for inclusion.")
 
 # Histogram of number of M protein measurements 
 plt.figure()
-plt.hist(count_hist_data, bins = max(count_hist_data))
+plt.hist(counts_mprotein, bins = max(counts_mprotein)+1) #mprotein counts
 plt.title("Histogram of number of M protein measurements ") #, y=1.02)
 plt.xlabel("Number of M protein measurements") #, labelpad=14)
 plt.ylabel("Count") #, labelpad=14)
 plt.xticks()
-plt.savefig("./COMMPASS_Mprotein_count_histogram.pdf")
+plt.savefig("./COMMPASS_Mprotein_count_histogram.png")
 plt.show()
 plt.close()
 
+
+"""
 data_treat_line_1 = df_treatment_lines[["Treatment line 1"]]
 sns.set(font_scale=0.6)
 data_treat_line_1.value_counts().plot(kind='bar', figsize=(7, 6), rot=0)
@@ -698,7 +635,7 @@ for row_index in range(len(df_mprotein_and_dates)):
     if not (df_mprotein_and_dates.loc[row_index,['PUBLIC_ID']][0] == PUBLIC_ID):
         ax1.set_title("Patient ID " + str(PUBLIC_ID))
         ax1.set_xlabel("Time (year)")
-        ax1.set_ylabel("Serum Mprotein (g/L)")
+        ax1.set_ylabel("Serum Mprotein (g/dL)")
         ax1.set_ylim(bottom=0)
         ax2.set_ylabel("Treatment line")
         ax2.set_yticks(range(max_treat_line_key+1))
@@ -772,7 +709,7 @@ for row_index in range(len(df_mprotein_and_dates)):
 
 ax1.set_title("Patient ID " + str(PUBLIC_ID))
 ax1.set_xlabel("Time (year)")
-ax1.set_ylabel("Serum Mprotein (g/L)")
+ax1.set_ylabel("Serum Mprotein (g/dL)")
 ax1.set_ylim(bottom=0)
 ax2.set_ylabel("Treatment line")
 ax2.set_yticks(range(max_treat_line_key+1))
@@ -851,4 +788,4 @@ sns.heatmap(drugmatrix.iloc[:,:]>0, annot=False)
 plt.tight_layout()
 plt.savefig("./drug_matrix_binary_COMMPASS.pdf")
 #plt.show()
-
+"""
