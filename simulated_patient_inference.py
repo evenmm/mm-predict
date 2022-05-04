@@ -107,14 +107,18 @@ plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_pati
 #####################################
 # Patient 2
 #####################################
-# With k drug effect and growth rate parameters:
+# 1) Simulate data
+# With k drug effect and growth rate parameters: 
 parameters_patient_2 = Parameters(Y_0=50, pi_r=0.10, g_r=0.020, g_s=0.100, k_1=0.300, sigma=global_sigma)
+#parameters_patient_2 = Parameters(Y_0=50, pi_r=0.10, g_r=2e-3, g_s=1e-2, k_1=3e-2, sigma=global_sigma)
 
 # Measure M protein
 Mprotein_recording_interval_patient_2 = 5 #every X days
+#Mprotein_recording_interval_patient_2 = 200 #every X days
 N_Mprotein_measurements_patient_2 = 8 # for N*X days
 measurement_times_patient_2 = Mprotein_recording_interval_patient_2 * np.linspace(0,N_Mprotein_measurements_patient_2,N_Mprotein_measurements_patient_2+1)
 
+# Define history
 treatment_history_patient_2 = [
     Treatment(start=0, end=measurement_times_patient_2[4], id=1),
     Treatment(start=measurement_times_patient_2[4], end=measurement_times_patient_2[8], id=0),
@@ -134,29 +138,7 @@ param_array_patient_2 = parameters_patient_2.to_array_without_sigma()
 random_samples = np.random.uniform(0,1,len(ub))
 x0_0 = lb + np.multiply(random_samples, (ub-lb))
 
-def infer_parameters(patient, lb, ub):
-    bounds_Y_0 = (lb[0], ub[0])
-    bounds_pi_r = (lb[1], ub[1])
-    bounds_g_r = (lb[2], ub[2])
-    bounds_g_s = (lb[3], ub[3])
-    bounds_k_1 = (lb[4], ub[4])
-    all_bounds = (bounds_Y_0, bounds_pi_r, bounds_g_r, bounds_g_s, bounds_k_1)
-    lowest_f_value = np.inf
-    best_x = np.array([0,0,0,0,0])
-    random_samples = np.random.uniform(0,1,len(ub))
-    x0 = lb + np.multiply(random_samples, (ub-lb))
-    best_optim = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
-    for iteration in range(10000):
-        random_samples = np.random.uniform(0,1,len(ub))
-        x0 = lb + np.multiply(random_samples, (ub-lb))
-        optimization_result = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
-        if optimization_result.fun < lowest_f_value:
-            lowest_f_value = optimization_result.fun
-            best_x = optimization_result.x
-            best_optim = optimization_result
-    return best_optim
-
-best_optim = infer_parameters(patient_2, lb, ub)
+best_optim = infer_parameters_simulated_patient(patient_2, lb, ub)
 best_x = best_optim.x 
 lowest_f_value = best_optim.fun
 
@@ -203,7 +185,7 @@ treatment_history_patient_3 = [
     ]
 patient_3 = Patient(parameters_patient_3, measurement_times, treatment_history_patient_3, covariates = [0,0])
 plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_3, patient_3, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title="Patient 3")
-best_optim_3 = infer_parameters(patient_3, lb, ub)
+best_optim_3 = infer_parameters_simulated_patient(patient_3, lb, ub)
 best_x_3 = best_optim_3.x 
 lowest_f_value_3 = best_optim_3.fun
 estimated_parameters_patient_3 = get_parameters_from_optimresult(best_x_3, global_sigma)
@@ -216,7 +198,7 @@ treatment_history_patient_4 = [
     ]
 patient_4 = Patient(parameters_patient_4, measurement_times, treatment_history_patient_4, covariates = [1,0])
 plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_4, patient_4, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title="Patient 4")
-best_optim_4 = infer_parameters(patient_4, lb, ub)
+best_optim_4 = infer_parameters_simulated_patient(patient_4, lb, ub)
 best_x_4 = best_optim_4.x 
 lowest_f_value_4 = best_optim_4.fun
 estimated_parameters_patient_4 = get_parameters_from_optimresult(best_x_4, global_sigma)
@@ -229,7 +211,7 @@ treatment_history_patient_5 = [
     ]
 patient_5 = Patient(parameters_patient_5, measurement_times, treatment_history_patient_5, covariates = [1,1])
 plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_5, patient_5, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title="Patient 5")
-best_optim_5 = infer_parameters(patient_5, lb, ub)
+best_optim_5 = infer_parameters_simulated_patient(patient_5, lb, ub)
 best_x_5 = best_optim_5.x 
 lowest_f_value_5 = best_optim_5.fun
 estimated_parameters_patient_5 = get_parameters_from_optimresult(best_x_5, global_sigma)

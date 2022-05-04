@@ -1,3 +1,4 @@
+import pandas as pd 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
@@ -5,6 +6,9 @@ import sys
 from scipy import optimize
 from scipy.optimize import least_squares
 from copy import deepcopy
+
+def isNaN(string):
+    return string != string
 
 np.random.seed(42)
 from numpy.random import MT19937
@@ -19,8 +23,16 @@ rs = RandomState(MT19937(SeedSequence(123456789)))
 # Growth rates are in unit 1/days
 # 22.03.22 treatment in terms of different drugs
 
-drug_dictionary = np.load("drug_dictionary.npy", allow_pickle=True).item()
-treatment_to_id_dictionary = np.load("treatment_to_id_dictionary.npy", allow_pickle=True).item()
+drug_dictionary_OSLO = np.load("drug_dictionary_OSLO.npy", allow_pickle=True).item()
+drug_dictionary_COMMPASS = np.load("drug_dictionary_COMMPASS.npy", allow_pickle=True).item()
+for key, value in drug_dictionary_COMMPASS.items():
+    if key not in drug_dictionary_OSLO.keys():
+        drug_dictionary_OSLO[key] = (max(drug_dictionary_OSLO.values())+1)
+# Join the two drug dictionaries to get a complete drug dictionary 
+drug_dictionary = drug_dictionary_OSLO
+np.save("drug_dictionary.npy", drug_dictionary)
+treatment_to_id_dictionary = np.load("treatment_to_id_dictionary_OSLO.npy", allow_pickle=True).item()
+#treatment_to_id_dictionary = np.load("treatment_to_id_dictionary_COMMPASS.npy", allow_pickle=True).item()
 treatment_id_to_drugs_dictionary = {v: k for k, v in treatment_to_id_dictionary.items()}
 
 #unique_drugs = ['Revlimid (lenalidomide)', 'Cyclophosphamide', 'Pomalidomide',
@@ -33,7 +45,7 @@ treatment_id_to_drugs_dictionary = {v: k for k, v in treatment_to_id_dictionary.
 # 'Velcade s.c. every 2nd week', 'Clarithromycin', 'hydroxychloroquine',
 # 'Metformin', 'Rituximab']
 #drug_ids = range(len(unique_drugs))
-#drug_dictionary = dict(zip(unique_drugs, drug_ids))
+#drug_dictionary_OSLO = dict(zip(unique_drugs, drug_ids))
 #unique_treatment_lines = []
 #drug_ids = range(len(unique_treatment_lines))
 #treatment_to_id_dictionary = dict(zip(unique_treatment_lines, treatment_line_ids))
@@ -82,7 +94,13 @@ class Treatment:
         self.end = end
         self.id = id
     def get_drug_ids(self):
-        return [drug_dictionary[drug_name] for drug_name in treatment_id_to_drugs_dictionary[self.id]]
+        return [drug_dictionary_OSLO[drug_name] for drug_name in treatment_id_to_drugs_dictionary[self.id]]
+
+class Drug_period:
+    def __init__(self, start, end, id):
+        self.start = start
+        self.end = end
+        self.id = id
 
 class Patient: 
     def __init__(self, parameters, measurement_times, treatment_history, covariates = []):
@@ -97,6 +115,64 @@ class Patient:
     def get_observed_values(self):
         return self.observed_values
 
+class COMMPASS_Patient: 
+    def __init__(self, measurement_times, drug_dates, drug_history, treatment_history, observed_values, covariates, name):
+        self.name = name # string: patient id
+        self.measurement_times = measurement_times # numpy array: dates for M protein measurements in observed_values
+        self.observed_values = observed_values # numpy array: M protein measurements
+        self.drug_history = drug_history # numpy array of possibly overlapping single Drug_period instances, a pre-step to make treatment_history
+        self.drug_dates = drug_dates # set: set of drug dates that marks the intervals 
+        self.treatment_history = treatment_history # numpy array of non-overlapping Treatment instances (drug combinations) sorted by occurrence
+        self.covariates = covariates # ?? : other covariates
+        self.parameter_estimates = np.array([])
+        self.parameter_periods = np.array([])
+    def get_measurement_times(self):
+        return self.measurement_times
+    def get_treatment_history(self):
+        return self.treatment_history
+    def get_drug_history(self):
+        return self.drug_history
+    def get_observed_values(self):
+        return self.observed_values
+    def print(self):
+        print("\nPrinting patient "+self.name)
+        print("M protein values:")
+        print(self.observed_values)
+        print("Measurement times:")
+        print(self.measurement_times)
+        print("Drug history:")
+        for number, drug_period in enumerate(self.drug_history):
+            print(str(number) + ": [",drug_period.start, "-", drug_period.end, "]: drug id", drug_period.id)
+        print("Treatment history:")
+        for number, treatment in enumerate(self.treatment_history):
+            print(str(number) + ": [",treatment.start, "-", treatment.end, "]: treatment id", treatment.id)
+        print("Estimated parameters by period:")
+        for number, parameters in enumerate(self.parameter_estimates):
+            print(parameters.to_array_without_sigma(), "in", self.parameter_periods[number])
+    def add_Mprotein_line_to_patient(self, time, value):
+        self.measurement_times = np.append(self.measurement_times,[time])
+        self.observed_values = np.append(self.observed_values,[value])
+        return 0
+    def add_drug_period_to_patient(self, drug_period_object):
+        self.drug_history = np.append(self.drug_history,[drug_period_object])
+        self.drug_dates.add(drug_period_object.start)
+        self.drug_dates.add(drug_period_object.end)
+        return 0
+    def add_treatment_to_treatment_history(self, treatment_object):
+        self.treatment_history = np.append(self.treatment_history,[treatment_object])
+        return 0
+    def add_parameter_estimate(self, estimates, period):
+        #if len(self.parameter_estimates) == 0:
+        #    self.parameter_estimates = np.zeros(len(self.treatment_history))
+        self.parameter_estimates = np.append(self.parameter_estimates,[estimates])
+        if len(self.parameter_periods) == 0:
+            self.parameter_periods = np.array([period]) 
+        else:
+            self.parameter_periods = np.append(self.parameter_periods, np.array([period]), axis=0)
+
+#####################################
+# Generative models, simulated data
+#####################################
 # Efficient implementation 
 # Simulates M protein value at times [t + delta_T]_i
 # Y_t is the M protein level at start of time interval
@@ -120,11 +196,12 @@ def measure_Mprotein_noiseless(params, measurement_times, treatment_history):
         this_treatment = treatment_history[treat_index]
         if this_treatment.id == 0:
             drug_effect = 0
-        elif this_treatment.id == 1:
-            drug_effect = t_params.k_1
+        #elif this_treatment.id == 1:
+        # With inference only for individual combinations at a time, it is either 0 or "treatment on", which is k1
         else:
-            print("Encountered treatment id with unspecified drug effect in function: measure_Mprotein")
-            sys.exit("Encountered treatment id with unspecified drug effect in function: measure_Mprotein")
+            drug_effect = t_params.k_1
+        #else:
+        #    sys.exit("Encountered treatment id with unspecified drug effect in function: measure_Mprotein")
         
         # Filter that selects measurement times occuring while on this treatment line
         correct_times = (measurement_times >= this_treatment.start) & (measurement_times <= this_treatment.end)
@@ -174,16 +251,20 @@ def measure_Mprotein_naive(params, measurement_times, treatment_history):
     return Mprotein_values
     #return params.Y_0 * params.pi_r * np.exp(params.g_r * measurement_times) + params.Y_0 * (1-params.pi_r) * np.exp((params.g_s - params.k_1) * measurement_times)
 
+#####################################
+# Plotting
+#####################################
 #treat_colordict = dict(zip(treatment_line_ids, treat_line_colors))
-def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parameters, patient, estimated_parameters=[], PLOT_ESTIMATES=False):
+def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parameters, patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title="Patient 1"):
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
     observed_values = patient.get_observed_values()
-    plotting_times = np.linspace(0, int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
+    plotting_times = np.linspace(measurement_times[0], int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
     
     # Plot true M protein values according to true parameters
     end_of_history = treatment_history[-1].end
     plotting_mprotein_values = measure_Mprotein_noiseless(true_parameters, plotting_times, treatment_history)
+    print("plotting_mprotein_values", plotting_mprotein_values)
     # Count resistant part
     resistant_parameters = Parameters((true_parameters.Y_0*true_parameters.pi_r), 1, true_parameters.g_r, true_parameters.g_s, true_parameters.k_1, true_parameters.sigma)
     plotting_resistant_mprotein_values = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
@@ -212,17 +293,19 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
         this_treatment = treatment_history[treat_index]
         if this_treatment.id != 0:
             treatment_duration = this_treatment.end - this_treatment.start
+            if this_treatment.id > maxdrugkey:
+                maxdrugkey = this_treatment.id
 
             #drugs_1 = list of drugs from dictionary mapping id-->druglist, key=this_treatment.id
             #for ii in range(len(drugs_1)):
-            #    drugkey = drug_dictionary[drugs_1[ii]]
+            #    drugkey = drug_dictionary_OSLO[drugs_1[ii]]
             #    if drugkey > maxdrugkey:
             #        maxdrugkey = drugkey
             #    #             Rectangle(             x                   y            ,        width      ,   height  , ...)
             #    ax2.add_patch(Rectangle((this_treatment.start, drugkey - plotheight/2), treatment_duration, plotheight, zorder=2, color=drug_colordict[drugkey]))
             ax2.add_patch(Rectangle((this_treatment.start, this_treatment.id - plotheight/2), treatment_duration, plotheight, zorder=2, color="lightskyblue")) #color=treat_colordict[treat_line_id]))
 
-    ax1.set_title("Patient " + str(1))
+    ax1.set_title(plot_title)
     ax1.set_xlabel("Days")
     ax1.set_ylabel("Serum Mprotein (g/L)")
     ax1.set_ylim(bottom=0)
@@ -235,163 +318,22 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
     ax2.legend()
     fig.tight_layout()
     if PLOT_ESTIMATES:
-        plt.savefig("./patient_truth_and_observations_with_model_fit.pdf")
+        plt.savefig("./patient_truth_and_observations_with_model_fit"+plot_title+".pdf")
     else:
-        plt.savefig("./patient_truth_and_observations.pdf")
+        plt.savefig("./patient_truth_and_observations"+plot_title+".pdf")
     plt.show()
     plt.close()
-
-
-#####################################
-# Generate data 
-#####################################
-# Shared parameters
-#####################################
-global_sigma = 0.1  #Measurement noise
-# Drug effects: 
-# map id=1 to effect=k_1
-# map id=2 to effect=k_2
-# ...
-
-## Patient specific parameters
-# No drug:   A doubling time of 2 months = 60 days means that X1/X0 = 2   = e^(60*alpha) ==> alpha = log(2)/60   = approx.  0.005 1/days
-# With drug: A halving  time of 2 months = 60 days means that X1/X0 = 1/2 = e^(60*alpha) ==> alpha = log(1/2)/60 = approx. -0.005 1/days
-# Encoding cost of resistance giving resistant cells a lower base growth rate than sensitive cells 
-
-"""
-#####################################
-# Patient 1
-#####################################
-# With drug effect and growth rate parameters:
-#parameters_patient_1 = Parameters(Y_0=50, pi_r=0.10, g_r=0.008, g_s=0.010, k_1=0.020, sigma=global_sigma)
-# With bulk growth rates on treatment:
-#parameters_patient_1 = Parameters(Y_0=50, pi_r=0.01, g_r=0.008, g_s=-0.010, k_1=0.000, sigma=global_sigma)
-parameters_patient_1 = Parameters(Y_0=50, pi_r=0.01, g_r=0.040, g_s=-0.200, k_1=0.000, sigma=global_sigma)
-
-# Measure M protein
-Mprotein_recording_interval_patient_1 = 10 #every X days
-N_Mprotein_measurements_patient_1 = 5 # for N*X days
-measurement_times_patient_1 = Mprotein_recording_interval_patient_1 * np.linspace(0,N_Mprotein_measurements_patient_1,N_Mprotein_measurements_patient_1+1)
-
-# Simplest case: Only one treatment period
-T_1_p_1 = Treatment(start=0, end=measurement_times_patient_1[-1], id=1)
-treatment_history_patient_1 = [T_1_p_1]
-
-patient_1 = Patient(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1)
-patient_1.plot()
-
-print("Measurement times patient 1", measurement_times_patient_1)
-
-noiseless_M_protein_values_patient_1 = measure_Mprotein_naive(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1)
-print("noiseless_M_protein_values_patient_1, Naive method:\n", noiseless_M_protein_values_patient_1)
-
-noiseless_M_protein_values_patient_1 = measure_Mprotein_noiseless(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1)
-print("noiseless_M_protein_values_patient_1, efficient method:\n", noiseless_M_protein_values_patient_1)
-
-observed_M_protein_values_patient_1 = measure_Mprotein_with_noise(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1)
-print("observed_M_protein_values_patient_1, efficient method:\n", observed_M_protein_values_patient_1)
-
-#####################################
-# Plot data 
-#####################################
-plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1)
 
 #####################################
 # Inference
 #####################################
-# For inferring both growth rates, k_D and sigma:
-##      Y_0, pi_r,   g_r,   g_s,   k_1=0.020
-#lb = [   0,    0, -0.10, -0.10,  0.00, 1e-6]
-#ub = [1000,    1,  0.10,  0.10,  0.50,  5e4]
-params_to_be_inferred = np.array([parameters_patient_1.Y_0, parameters_patient_1.pi_r, parameters_patient_1.g_r, parameters_patient_1.g_s])
-# For inferring bulk growth rates
-#               Y_0, pi_r,   g_r,   g_s,
-lb = np.array([   0,    0, -1.00, -2.00])
-ub = np.array([1000,    1,  1.00,  2.00])
-bounds_Y_0 = (lb[0], ub[0])
-bounds_pi_r = (lb[1], ub[1])
-bounds_g_r = (lb[2], ub[2])
-bounds_g_s = (lb[3], ub[3])
-#bounds_Y_0 =     (0, 1000)
-#bounds_pi_r =    (0,    1)
-#bounds_g_r = (-0.10, 0.10)
-#bounds_g_s = (-0.10, 0.10)
+global_sigma = 0.1  #Measurement noise
 
-all_bounds = (bounds_Y_0, bounds_pi_r, bounds_g_r, bounds_g_s)
-
-def least_squares_objective_function(array_x, measurement_times, treatment_history, observations):
+def least_squares_objective_function_patient_1(array_x, measurement_times, treatment_history, observations):
     Parameter_object_x = Parameters(Y_0=array_x[0], pi_r=array_x[1], g_r=array_x[2], g_s=array_x[3], k_1=0.000, sigma=global_sigma)
     predictions = measure_Mprotein_noiseless(Parameter_object_x, measurement_times, treatment_history)
     sumofsquares = np.sum((observations - predictions)**2)
     return sumofsquares
-
-random_samples = np.random.uniform(0,1,len(ub))
-x0_0 = lb + np.multiply(random_samples, (ub-lb))
-
-lowest_f_value = np.inf
-best_x = np.array([0,0,0,0])
-for iteration in range(1000):
-    random_samples = np.random.uniform(0,1,len(ub))
-    x0 = lb + np.multiply(random_samples, (ub-lb))
-    optimization_result = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1), bounds=all_bounds, options={'disp':False})
-    if optimization_result.fun < lowest_f_value:
-        lowest_f_value = optimization_result.fun
-        best_x = optimization_result.x
-
-print("Compare truth with estimate:")
-print("True x:", params_to_be_inferred)
-print("Inferred x:", best_x)
-
-f_value_at_truth = least_squares_objective_function(params_to_be_inferred, measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1)
-x0_value = least_squares_objective_function(x0_0, measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1)
-
-print("f value at first x0:", x0_value)
-print("f value at truth:", f_value_at_truth)
-print("f value at estimate:", lowest_f_value)
-
-estimated_parameters = Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=0.000, sigma=global_sigma)
-plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_1, measurement_times_patient_1, treatment_history_patient_1, observed_M_protein_values_patient_1, estimated_parameters=estimated_parameters, PLOT_ESTIMATES=True)
-"""
-
-#####################################
-# Patient 2
-#####################################
-# With k drug effect and growth rate parameters:
-parameters_patient_2 = Parameters(Y_0=50, pi_r=0.10, g_r=0.020, g_s=0.100, k_1=0.300, sigma=global_sigma)
-
-# Measure M protein
-Mprotein_recording_interval_patient_2 = 10 #every X days
-N_Mprotein_measurements_patient_2 = 4 # for N*X days
-measurement_times_patient_2 = Mprotein_recording_interval_patient_2 * np.linspace(0,N_Mprotein_measurements_patient_2,N_Mprotein_measurements_patient_2+1)
-
-treatment_history_patient_2 = [
-    Treatment(start=0, end=measurement_times_patient_2[2], id=1),
-    Treatment(start=measurement_times_patient_2[2], end=measurement_times_patient_2[4], id=0),
-    #Treatment(start=measurement_times_patient_2[1], end=measurement_times_patient_2[2], id=0),
-    #Treatment(start=measurement_times_patient_2[2], end=measurement_times_patient_2[3], id=1),
-    #Treatment(start=measurement_times_patient_2[3], end=measurement_times_patient_2[4], id=1),
-    #Treatment(start=measurement_times_patient_2[4], end=measurement_times_patient_2[5], id=0),
-    #Treatment(start=measurement_times_patient_2[5], end=measurement_times_patient_2[7], id=0),
-    #Treatment(start=measurement_times_patient_2[7], end=measurement_times_patient_2[-1], id=1),
-    ]
-
-patient_2 = Patient(parameters_patient_2, measurement_times_patient_2, treatment_history_patient_2, covariates = [0])
-"""
-plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_2, patient_2, estimated_parameters=[], PLOT_ESTIMATES=False)
-## Inference
-# For inferring both k_1 and growth rates
-#               Y_0, pi_r,   g_r,   g_s,  k_1
-lb = np.array([   0,    0,  0.00,  0.00, 0.00])
-ub = np.array([1000,    1,  2.00,  2.00, 2.00])
-
-param_array_patient_2 = parameters_patient_2.to_array_without_sigma()
-
-bounds_Y_0 = (lb[0], ub[0])
-bounds_pi_r = (lb[1], ub[1])
-bounds_g_r = (lb[2], ub[2])
-bounds_g_s = (lb[3], ub[3])
-bounds_k_1 = (lb[4], ub[4])
-all_bounds = (bounds_Y_0, bounds_pi_r, bounds_g_r, bounds_g_s, bounds_k_1)
 
 def least_squares_objective_function(array_x, patient):
     measurement_times = patient.measurement_times
@@ -403,72 +345,45 @@ def least_squares_objective_function(array_x, patient):
     sumofsquares = np.sum((observations - predictions)**2)
     return sumofsquares
 
-random_samples = np.random.uniform(0,1,len(ub))
-x0_0 = lb + np.multiply(random_samples, (ub-lb))
-
-lowest_f_value = np.inf
-best_x = np.array([0,0,0,0,0])
-for iteration in range(100000):
+def infer_parameters_simulated_patient(patient, lb, ub, N_iterations=10000):
+    bounds_Y_0 = (lb[0], ub[0])
+    bounds_pi_r = (lb[1], ub[1])
+    bounds_g_r = (lb[2], ub[2])
+    bounds_g_s = (lb[3], ub[3])
+    bounds_k_1 = (lb[4], ub[4])
+    all_bounds = (bounds_Y_0, bounds_pi_r, bounds_g_r, bounds_g_s, bounds_k_1)
+    lowest_f_value = np.inf
+    best_x = np.array([0,0,0,0,0])
     random_samples = np.random.uniform(0,1,len(ub))
     x0 = lb + np.multiply(random_samples, (ub-lb))
-    optimization_result = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient_2), bounds=all_bounds, options={'disp':False})
-    if optimization_result.fun < lowest_f_value:
-        lowest_f_value = optimization_result.fun
-        best_x = optimization_result.x
+    best_optim = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
+    for iteration in range(N_iterations):
+        random_samples = np.random.uniform(0,1,len(ub))
+        x0 = lb + np.multiply(random_samples, (ub-lb))
+        optimization_result = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
+        if optimization_result.fun < lowest_f_value:
+            lowest_f_value = optimization_result.fun
+            best_x = optimization_result.x
+            best_optim = optimization_result
+    return best_optim
 
-print("Compare truth with estimate:")
-print("True x:", param_array_patient_2)
-print("Inferred x:", best_x)
-
-f_value_at_truth = least_squares_objective_function(param_array_patient_2, patient_2)
-x0_value = least_squares_objective_function(x0_0, patient_2)
-
-print("f value at first x0:", x0_value)
-print("f value at truth:", f_value_at_truth)
-print("f value at estimate:", lowest_f_value)
-
-estimated_parameters = Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=global_sigma)
-plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_patient_2, patient_2, estimated_parameters=estimated_parameters, PLOT_ESTIMATES=True)
-"""
-
-#####################################################
-# Learn effect of history on drug response parameters 
-from sklearn.datasets import make_regression
-from sklearn.linear_model import LinearRegression
-# create dataset
-
-parameters_patient_3 = Parameters(Y_0=50, pi_r=0.10, g_r=0.020, g_s=0.100, k_1=0.300, sigma=global_sigma)
-parameters_patient_4 = Parameters(Y_0=50, pi_r=0.90, g_r=0.020, g_s=0.100, k_1=0.300, sigma=global_sigma)
-parameters_patient_5 = Parameters(Y_0=50, pi_r=0.90, g_r=0.020, g_s=0.100, k_1=0.300, sigma=global_sigma)
-patient_3 = deepcopy(patient_2)
-
-patient_4 = deepcopy(patient_2)
-patient_4.covariates = [1]
-patient_5 = deepcopy(patient_4)
-print(patient_5.covariates)
-
-# n = 4, p = 1, len(Y) = 4
-X = np.zeros((4,1))
-X[0,:] = patient_2.covariates
-X[1,:] = patient_3.covariates
-X[2,:] = patient_4.covariates
-X[3,:] = patient_5.covariates
-print(X)
-y = np.zeros((4,4))
-y[0,:] = parameters_patient_2.to_array_without_sigma()[1:5]
-y[1,:] = parameters_patient_3.to_array_without_sigma()[1:5]
-y[2,:] = parameters_patient_4.to_array_without_sigma()[1:5]
-y[3,:] = parameters_patient_5.to_array_without_sigma()[1:5]
-print(y)
-#X, y = make_regression(n_samples=1000, n_features=10, n_informative=5, n_targets=2, random_state=1, noise=0.5)
-# define model
-model = LinearRegression()
-# fit model
-model.fit(X, y)
-# make a prediction
-test_covariates = [0]
-#row = [0.21947749, 0.32948997, 0.81560036, 0.440956, -0.0606303, -0.29257894, -0.2820059, -0.00290545, 0.96402263, 0.04992249]
-yhat = model.predict([test_covariates])
-# summarize prediction
-print(yhat[0])
-
+def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
+    bounds_Y_0 = (lb[0], ub[0])
+    bounds_pi_r = (lb[1], ub[1])
+    bounds_g_r = (lb[2], ub[2])
+    bounds_g_s = (lb[3], ub[3])
+    bounds_k_1 = (lb[4], ub[4])
+    all_bounds = (bounds_Y_0, bounds_pi_r, bounds_g_r, bounds_g_s, bounds_k_1)
+    lowest_f_value = np.inf
+    random_samples = np.random.uniform(0,1,len(ub))
+    x0 = lb + np.multiply(random_samples, (ub-lb))
+    best_optim = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
+    for iteration in range(N_iterations):
+        random_samples = np.random.uniform(0,1,len(ub))
+        x0 = lb + np.multiply(random_samples, (ub-lb))
+        optimization_result = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
+        if optimization_result.fun < lowest_f_value:
+            lowest_f_value = optimization_result.fun
+            best_optim = optimization_result
+    best_x = best_optim.x
+    return Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=global_sigma)
