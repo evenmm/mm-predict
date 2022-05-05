@@ -199,7 +199,7 @@ training_instance_id = 0
 df_mprotein_and_dates['training_instance_id'] = np.nan
 X_periods = {}
 Y = []
-N_iter = 10000
+N_iter = 1000
 this_history = np.array([])
 for name, patient in COMMPASS_patient_dictionary.items():
     # Find periods of interest by looking through patient history 
@@ -210,22 +210,33 @@ for name, patient in COMMPASS_patient_dictionary.items():
         if valid_interval == False: 
             if treatment.id == treatment_id_of_interest:
                 # We found the start 
-                #print("We found the start ")
                 valid_interval = True
                 period_start = treatment.start
                 this_history = np.array([treatment])
                 # Continute to next
-            else: 
+            elif treatment.id == 0:
+                # The last M protein under this treatment might be the start
+                # Find time of last M protein value within period
+                valid_observations = patient.observed_values[patient.measurement_times>=treatment.start]
+                valid_times = patient.measurement_times[patient.measurement_times>=treatment.start]
+                valid_observations = valid_observations[valid_times<=treatment.end]
+                valid_times = valid_times[valid_times<=treatment.end]
+                if len(valid_times) > 0:
+                    valid_interval = True
+                    period_start = valid_times[-1]
+                    zero_treatment = Treatment(period_start, treatment.end, treatment.id)
+                    this_history = np.array([zero_treatment])
+                    # Continute to next
+            else:
                 # Continue looking for the start
                 pass 
         else: # if valid interval == True, then we are looking for 0 or the end 
             if treatment.id == treatment_id_of_interest:
-                # Only if two back-to-back cases of correct id. This should not happen
+                # Continuing after a zero
                 this_history = np.append(this_history,[treatment])
                 pass
             elif treatment.id == 0:
-                # Extending the period by a drug holiday, then it's the end at the end of treatment id 0
-                #print("Extending the period by a drug holiday, then ending this period")
+                # Only after the id of interest. We are extending the period by a drug holiday, then ending the period at the end of this treatment
                 this_history = np.append(this_history,[treatment])
                 valid_interval = False
                 period_end = treatment.end
@@ -246,74 +257,81 @@ for name, patient in COMMPASS_patient_dictionary.items():
                     this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
                     # Add estimates to Y
                     Y.append(this_estimate) # training_instance_id is position in Y
-                    patient.add_parameter_estimate(this_estimate, (period_start, period_end))
+                    patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
                     training_instance_id = training_instance_id + 1
             else: 
                 # We found the end at the beginning of this foreign treatment id
                 valid_interval = False
-                period_end = treatment.start
-                # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
-                valid_observations = patient.observed_values[patient.measurement_times>=period_start]
-                valid_times = patient.measurement_times[patient.measurement_times>=period_start]
-                valid_observations = valid_observations[valid_times<=period_end]
-                valid_times = valid_times[valid_times<=period_end]
-                # Only add as data instance to X and Y if there are enough:
-                if len(valid_times) >= minimum_number_of_measurements and min(valid_observations) > 0:
-                    number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
-                    # Note the limits of this period
-                    X_periods[training_instance_id] = [patient.name, period_start, period_end] # optional
-                    # Set training_instance_id for slice with correct patient id + M protein measurements within period:
-                    df_mprotein_and_dates[(df_mprotein_and_dates["PUBLIC_ID"] == patient.name) & (df_mprotein_and_dates["VISITDY"] > period_start) & (df_mprotein_and_dates["VISITDY"] < period_end)]['training_instance_id'] = training_instance_id
-                    # Estimate parameters for a dummy patient within this interval
-                    dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, observed_values=valid_observations, covariates=[], name="dummy")
-                    this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
-                    # Add estimates to Y
-                    Y.append(this_estimate) # training_instance_id is position in Y
-                    patient.add_parameter_estimate(this_estimate, (period_start, period_end))
-                    training_instance_id = training_instance_id + 1
+                # Check if we captured the treatment of interest and not only zero: 
+                if treatment_id_of_interest in [element.id for element in this_history]:
+                    period_end = treatment.start
+                    # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
+                    valid_observations = patient.observed_values[patient.measurement_times>=period_start]
+                    valid_times = patient.measurement_times[patient.measurement_times>=period_start]
+                    valid_observations = valid_observations[valid_times<=period_end]
+                    valid_times = valid_times[valid_times<=period_end]
+                    # Only add as data instance to X and Y if there are enough:
+                    if len(valid_times) >= minimum_number_of_measurements and min(valid_observations) > 0:
+                        number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
+                        # Note the limits of this period
+                        X_periods[training_instance_id] = [patient.name, period_start, period_end] # optional
+                        # Set training_instance_id for slice with correct patient id + M protein measurements within period:
+                        df_mprotein_and_dates[(df_mprotein_and_dates["PUBLIC_ID"] == patient.name) & (df_mprotein_and_dates["VISITDY"] > period_start) & (df_mprotein_and_dates["VISITDY"] < period_end)]['training_instance_id'] = training_instance_id
+                        # Estimate parameters for a dummy patient within this interval
+                        dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, observed_values=valid_observations, covariates=[], name="dummy")
+                        this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
+                        # Add estimates to Y
+                        Y.append(this_estimate) # training_instance_id is position in Y
+                        patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
+                        training_instance_id = training_instance_id + 1                    
     # After the last treatment, if ending on a valid interval, this is the end
     if valid_interval == True: 
-        #print("The end was the end of the last treatment")
-        period_end = patient.treatment_history[-1].end
-        # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
-        #print(period_start, period_end)
-        valid_observations = patient.observed_values[patient.measurement_times>=period_start]
-        valid_times = patient.measurement_times[patient.measurement_times>=period_start]
-        valid_observations = valid_observations[valid_times<=period_end]
-        valid_times = valid_times[valid_times<=period_end]
-        # Only add as data instance to X and Y if there are enough:
-        if len(valid_times) >= minimum_number_of_measurements and min(valid_observations) > 0:
-            number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
-            # Note the limits of this period
-            X_periods[training_instance_id] = [patient.name, period_start, period_end] # optional
-            # Set training_instance_id for slice with correct patient id + M protein measurements within period:
-            df_mprotein_and_dates[(df_mprotein_and_dates["PUBLIC_ID"] == patient.name) & (df_mprotein_and_dates["VISITDY"] > period_start) & (df_mprotein_and_dates["VISITDY"] < period_end)]['training_instance_id'] = training_instance_id
-            # Estimate parameters for a dummy patient within this interval
-            dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, observed_values=valid_observations, covariates=[], name="dummy")
-            this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
-            # Add estimates to Y
-            Y.append(this_estimate) # training_instance_id is position in Y
-            patient.add_parameter_estimate(this_estimate, (period_start, period_end))
-            training_instance_id = training_instance_id + 1
+        # Check if we captured the treatment of interest and not only zero: 
+        if treatment_id_of_interest in [element.id for element in this_history]:
+            period_end = patient.treatment_history[-1].end
+            # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
+            valid_observations = patient.observed_values[patient.measurement_times>=period_start]
+            valid_times = patient.measurement_times[patient.measurement_times>=period_start]
+            valid_observations = valid_observations[valid_times<=period_end]
+            valid_times = valid_times[valid_times<=period_end]
+            # Only add as data instance to X and Y if there are enough:
+            if len(valid_times) >= minimum_number_of_measurements and min(valid_observations) > 0:
+                number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
+                # Note the limits of this period
+                X_periods[training_instance_id] = [patient.name, period_start, period_end] # optional
+                # Set training_instance_id for slice with correct patient id + M protein measurements within period:
+                df_mprotein_and_dates[(df_mprotein_and_dates["PUBLIC_ID"] == patient.name) & (df_mprotein_and_dates["VISITDY"] > period_start) & (df_mprotein_and_dates["VISITDY"] < period_end)]['training_instance_id'] = training_instance_id
+                # Estimate parameters for a dummy patient within this interval
+                dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, observed_values=valid_observations, covariates=[], name="dummy")
+                this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
+                # Add estimates to Y
+                Y.append(this_estimate) # training_instance_id is position in Y
+                patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
+                training_instance_id = training_instance_id + 1
     # Plotting estimated parameters
     for index, param_set in enumerate(patient.parameter_estimates):
         # Find parameter set and corresponding period
         estimated_parameters = patient.parameter_estimates[index]
-        period_start, period_end = [patient.parameter_periods[index][ii] for ii in [0,1]]
-        # Find valid observation at valid times:
-        valid_observations = patient.observed_values[patient.measurement_times>=period_start]
-        valid_times = patient.measurement_times[patient.measurement_times>=period_start]
-        valid_observations = valid_observations[valid_times<=period_end]
-        valid_times = valid_times[valid_times<=period_end]
-        # Take the part of the history that is within the period of interest
-        valid_history = np.array([])
-        for treatment in patient.treatment_history:
-            if treatment.start >= period_start and treatment.end <= period_end:
-                valid_history = np.append(valid_history,[treatment])
-        plot_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=valid_history, observed_values=valid_observations, covariates=[], name=patient.name)
-        savename = "./COMMPASS_estimate_plots/treatment_id_"+str(treatment_id_of_interest)+"/Treatment_"+str(treatment_id_of_interest)+"_"+patient.name+"Y_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sigma="+str(estimated_parameters.sigma)+".png"
+        #period_start, period_end = [patient.parameter_periods[index][ii] for ii in [0,1]]
+        ## Find valid observation at valid times:
+        #valid_observations = patient.observed_values[patient.measurement_times>=period_start]
+        #valid_times = patient.measurement_times[patient.measurement_times>=period_start]
+        #valid_observations = valid_observations[valid_times<=period_end]
+        #valid_times = valid_times[valid_times<=period_end]
+        ## Take the part of the history that is within the period of interest
+        #valid_history = np.array([])
+        #for treatment in patient.treatment_history:
+        #    if treatment.start >= period_start and treatment.end <= period_end:
+        #        valid_history = np.append(valid_history,[treatment])
+        #plot_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=valid_history, observed_values=valid_observations, covariates=[], name=patient.name)
+        plot_patient = patient.dummmy_patients[index]
+        savename = "./COMMPASS_estimate_plots/treatment_id_"+str(treatment_id_of_interest)+"/Treatment_"+str(treatment_id_of_interest)+"_nr"+str(index)+"_"+patient.name+"Y_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sigma="+str(estimated_parameters.sigma)+".png"
         plot_title = patient.name #+"\nY_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sig=", str(estimated_parameters.sigma)
         plot_treatment_region_with_estimate(estimated_parameters, plot_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=plot_title, savename=savename)
+        #if patient.name == "MMRF_1489":
+        #    patient.print()
+        #    plot_patient.print()
+        #    efefefef
 
 #COMMPASS_patient_dictionary["MMRF_1293"].print()
 

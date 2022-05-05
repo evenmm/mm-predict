@@ -128,6 +128,7 @@ class COMMPASS_Patient:
         self.covariates = covariates # ?? : other covariates
         self.parameter_estimates = np.array([])
         self.parameter_periods = np.array([])
+        self.dummmy_patients = np.array([])
     def get_measurement_times(self):
         return self.measurement_times
     def get_treatment_history(self):
@@ -163,14 +164,16 @@ class COMMPASS_Patient:
     def add_treatment_to_treatment_history(self, treatment_object):
         self.treatment_history = np.append(self.treatment_history,[treatment_object])
         return 0
-    def add_parameter_estimate(self, estimates, period):
+    def add_parameter_estimate(self, estimates, period, dummmy_patient):
         #if len(self.parameter_estimates) == 0:
         #    self.parameter_estimates = np.zeros(len(self.treatment_history))
         self.parameter_estimates = np.append(self.parameter_estimates,[estimates])
         if len(self.parameter_periods) == 0:
             self.parameter_periods = np.array([period]) 
+            self.dummmy_patients = np.array([dummmy_patient])
         else:
             self.parameter_periods = np.append(self.parameter_periods, np.array([period]), axis=0)
+            self.dummmy_patients = np.append(self.dummmy_patients, np.array([dummmy_patient]), axis=0)
 
 #####################################
 # Generative models, simulated data
@@ -333,7 +336,8 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     treatment_history = patient.get_treatment_history()
     observed_values = patient.get_observed_values()
     time_zero = min(treatment_history[0].start, measurement_times[0])
-    plotting_times = np.linspace(time_zero, int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
+    time_max = max(treatment_history[-1].end, int(measurement_times[-1]))
+    plotting_times = np.linspace(time_zero, time_max, int((measurement_times[-1]+1)*10))
     
     # Plot true M protein values according to true parameters
     plotting_mprotein_values = measure_Mprotein_noiseless(true_parameters, plotting_times, treatment_history)
@@ -351,7 +355,7 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     # Plot sensitive and resistant
     ax1.plot(plotting_times, plotting_resistant_mprotein_values, linestyle='-', marker='', zorder=3, color='r', label="Estimated M protein (resistant)")
     # Plot total M protein
-    ax1.plot(plotting_times, plotting_mprotein_values, linestyle='-', marker='', zorder=3, color='k', label="Estimated M protein (total)")
+    ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='k', label="Estimated M protein (total)")
 
     ax1.plot(measurement_times, observed_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
 
