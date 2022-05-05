@@ -261,10 +261,10 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
     observed_values = patient.get_observed_values()
-    plotting_times = np.linspace(measurement_times[0], int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
+    first_time = min(measurement_times[0], treatment_history[0].start)
+    plotting_times = np.linspace(first_time, int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
     
     # Plot true M protein values according to true parameters
-    end_of_history = treatment_history[-1].end
     plotting_mprotein_values = measure_Mprotein_noiseless(true_parameters, plotting_times, treatment_history)
     # Count resistant part
     resistant_parameters = Parameters((true_parameters.Y_0*true_parameters.pi_r), 1, true_parameters.g_r, true_parameters.g_s, true_parameters.k_1, true_parameters.sigma)
@@ -332,10 +332,10 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
     observed_values = patient.get_observed_values()
-    plotting_times = np.linspace(measurement_times[0], int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
+    time_zero = min(treatment_history[0].start, measurement_times[0])
+    plotting_times = np.linspace(time_zero, int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
     
     # Plot true M protein values according to true parameters
-    end_of_history = treatment_history[-1].end
     plotting_mprotein_values = measure_Mprotein_noiseless(true_parameters, plotting_times, treatment_history)
     # Count resistant part
     resistant_parameters = Parameters((true_parameters.Y_0*true_parameters.pi_r), 1, true_parameters.g_r, true_parameters.g_s, true_parameters.k_1, true_parameters.sigma)
@@ -377,6 +377,7 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     ax1.set_xlabel("Days")
     ax1.set_ylabel("Serum Mprotein (g/dL)")
     ax1.set_ylim(bottom=0)
+    #ax1.set_xlim(left=time_zero)
     ax2.set_ylabel("Treatment line. max="+str(maxdrugkey))
     ax2.set_yticks(range(maxdrugkey+1))
     ax2.set_yticklabels(range(maxdrugkey+1))
