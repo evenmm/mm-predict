@@ -200,12 +200,15 @@ df_mprotein_and_dates['training_instance_id'] = np.nan
 X_periods = {}
 Y = []
 N_iter = 1000
+threshold_for_closeness_for_M_protein_at_start = 60
 this_history = np.array([])
 for name, patient in COMMPASS_patient_dictionary.items():
     # Find periods of interest by looking through patient history 
     period_start = np.nan
     period_end = np.nan
     valid_interval = False
+    dummy_measurement_times = np.array([])
+    dummy_observed_values = np.array([])
     for index, treatment in enumerate(patient.treatment_history):
         if valid_interval == False: 
             if treatment.id == treatment_id_of_interest:
@@ -213,20 +216,33 @@ for name, patient in COMMPASS_patient_dictionary.items():
                 valid_interval = True
                 period_start = treatment.start
                 this_history = np.array([treatment])
+                # Find time M protein value closest in time to the start of the treatment
+                if index > 0: 
+                    prev_treatment = patient.treatment_history[index-1]
+                    distances_to_treatment_start = abs(patient.measurement_times - np.repeat(treatment.start, len(patient.measurement_times)))
+                    closest_index = np.argmin(distances_to_treatment_start)
+                    if (not patient.measurement_times[closest_index] == treatment.start) and (min(distances_to_treatment_start) <= threshold_for_closeness_for_M_protein_at_start):
+                        # Add that value as M protein value at treatment start
+                        if distances_to_treatment_start[closest_index] > 0:
+                            dummy_measurement_times = np.concatenate((patient.measurement_times[0:closest_index], [treatment.start], patient.measurement_times[closest_index:]))
+                            dummy_observed_values = np.concatenate((patient.observed_values[0:closest_index], [patient.observed_values[closest_index]], patient.observed_values[closest_index:]))
+                        else:
+                            dummy_measurement_times = np.concatenate((patient.measurement_times[0:closest_index+1], [treatment.start], patient.measurement_times[closest_index+1:]))
+                            dummy_observed_values = np.concatenate((patient.observed_values[0:closest_index+1], [patient.observed_values[closest_index]], patient.observed_values[closest_index+1:]))
                 # Continute to next
-            elif treatment.id == 0:
-                # The last M protein under this treatment might be the start
-                # Find time of last M protein value within period
-                valid_observations = patient.observed_values[patient.measurement_times>=treatment.start]
-                valid_times = patient.measurement_times[patient.measurement_times>=treatment.start]
-                valid_observations = valid_observations[valid_times<=treatment.end]
-                valid_times = valid_times[valid_times<=treatment.end]
-                if len(valid_times) > 0:
-                    valid_interval = True
-                    period_start = valid_times[-1]
-                    zero_treatment = Treatment(period_start, treatment.end, treatment.id)
-                    this_history = np.array([zero_treatment])
-                    # Continute to next
+            #elif treatment.id == 0:
+            #    # The last M protein under this treatment might be the start
+            #    # Find time of last M protein value within period
+            #    valid_observations = patient.observed_values[patient.measurement_times>=treatment.start]
+            #    valid_times = patient.measurement_times[patient.measurement_times>=treatment.start]
+            #    valid_observations = valid_observations[valid_times<=treatment.end]
+            #    valid_times = valid_times[valid_times<=treatment.end]
+            #    if len(valid_times) > 0:
+            #        valid_interval = True
+            #        period_start = valid_times[-1]
+            #        zero_treatment = Treatment(period_start, treatment.end, treatment.id)
+            #        this_history = np.array([zero_treatment])
+            #        # Continute to next
             else:
                 # Continue looking for the start
                 pass 
@@ -241,8 +257,8 @@ for name, patient in COMMPASS_patient_dictionary.items():
                 valid_interval = False
                 period_end = treatment.end
                 # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
-                valid_observations = patient.observed_values[patient.measurement_times>=period_start]
-                valid_times = patient.measurement_times[patient.measurement_times>=period_start]
+                valid_observations = dummy_observed_values[dummy_measurement_times>=period_start]
+                valid_times = dummy_measurement_times[dummy_measurement_times>=period_start]
                 valid_observations = valid_observations[valid_times<=period_end]
                 valid_times = valid_times[valid_times<=period_end]
                 # Only add as data instance to X and Y if there are enough valid times
@@ -259,6 +275,8 @@ for name, patient in COMMPASS_patient_dictionary.items():
                     Y.append(this_estimate) # training_instance_id is position in Y
                     patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
                     training_instance_id = training_instance_id + 1
+                dummy_measurement_times = np.array([])
+                dummy_observed_values = np.array([])
             else: 
                 # We found the end at the beginning of this foreign treatment id
                 valid_interval = False
@@ -266,8 +284,8 @@ for name, patient in COMMPASS_patient_dictionary.items():
                 if treatment_id_of_interest in [element.id for element in this_history]:
                     period_end = treatment.start
                     # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
-                    valid_observations = patient.observed_values[patient.measurement_times>=period_start]
-                    valid_times = patient.measurement_times[patient.measurement_times>=period_start]
+                    valid_observations = dummy_observed_values[dummy_measurement_times>=period_start]
+                    valid_times = dummy_measurement_times[dummy_measurement_times>=period_start]
                     valid_observations = valid_observations[valid_times<=period_end]
                     valid_times = valid_times[valid_times<=period_end]
                     # Only add as data instance to X and Y if there are enough:
@@ -284,14 +302,16 @@ for name, patient in COMMPASS_patient_dictionary.items():
                         Y.append(this_estimate) # training_instance_id is position in Y
                         patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
                         training_instance_id = training_instance_id + 1                    
+                    dummy_measurement_times = np.array([])
+                    dummy_observed_values = np.array([])
     # After the last treatment, if ending on a valid interval, this is the end
     if valid_interval == True: 
         # Check if we captured the treatment of interest and not only zero: 
         if treatment_id_of_interest in [element.id for element in this_history]:
             period_end = patient.treatment_history[-1].end
             # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
-            valid_observations = patient.observed_values[patient.measurement_times>=period_start]
-            valid_times = patient.measurement_times[patient.measurement_times>=period_start]
+            valid_observations = dummy_observed_values[dummy_measurement_times>=period_start]
+            valid_times = dummy_measurement_times[dummy_measurement_times>=period_start]
             valid_observations = valid_observations[valid_times<=period_end]
             valid_times = valid_times[valid_times<=period_end]
             # Only add as data instance to X and Y if there are enough:

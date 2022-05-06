@@ -358,6 +358,7 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='k', label="Estimated M protein (total)")
 
     ax1.plot(measurement_times, observed_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
+    [ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
 
     # Plot treatments
     ax2 = ax1.twinx() 
