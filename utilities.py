@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import sys
+import pickle
 from scipy import optimize
 from scipy.optimize import least_squares
 from copy import deepcopy
@@ -89,6 +90,10 @@ class Parameters:
         return np.array([self.Y_0, self.pi_r, self.g_r, self.g_s, self.k_1])
     def to_array_with_sigma(self):
         return np.array([self.Y_0, self.pi_r, self.g_r, self.g_s, self.k_1, self.sigma])
+    def to_array_for_prediction(self):
+        return np.array([self.pi_r, self.g_r, (self.g_s - self.k_1)])
+    def to_prediction_array_composite_g_s_and_K_1(self):
+        return [self.pi_r, self.g_r, (self.g_s - self.k_1)]
 
 class Treatment:
     def __init__(self, start, end, id):
@@ -381,7 +386,83 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     ax1.set_title(plot_title)
     ax1.set_xlabel("Days")
     ax1.set_ylabel("Serum Mprotein (g/dL)")
-    ax1.set_ylim(bottom=0)
+    ax1.set_ylim(bottom=0, top=(1.1*max(observed_values)))
+    #ax1.set_xlim(left=time_zero)
+    ax2.set_ylabel("Treatment line. max="+str(maxdrugkey))
+    ax2.set_yticks(range(maxdrugkey+1))
+    ax2.set_yticklabels(range(maxdrugkey+1))
+    ax2.set_ylim(bottom=0, top=maxdrugkey+plotheight/2)
+    #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
+    ax1.set_zorder(ax1.get_zorder()+3)
+    ax1.legend()
+    ax2.legend()
+    fig.tight_layout()
+    plt.savefig(savename)
+    #plt.show()
+    plt.close()
+
+
+def plot_to_compare_estimated_and_predicted_drug_dynamics(true_parameters, predicted_parameters, patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title="Patient 1", savename=0):
+    measurement_times = patient.get_measurement_times()
+    treatment_history = patient.get_treatment_history()
+    observed_values = patient.get_observed_values()
+    time_zero = min(treatment_history[0].start, measurement_times[0])
+    time_max = max(treatment_history[-1].end, int(measurement_times[-1]))
+    plotting_times = np.linspace(time_zero, time_max, int((measurement_times[-1]+1)*10))
+    
+    # Plot true M protein values according to true parameters
+    plotting_mprotein_values = measure_Mprotein_noiseless(true_parameters, plotting_times, treatment_history)
+    # Count resistant part
+    resistant_parameters = Parameters((true_parameters.Y_0*true_parameters.pi_r), 1, true_parameters.g_r, true_parameters.g_s, true_parameters.k_1, true_parameters.sigma)
+    plotting_resistant_mprotein_values = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
+
+    # Plot predicted M protein values according to predicted parameters
+    plotting_mprotein_values_pred = measure_Mprotein_noiseless(predicted_parameters, plotting_times, treatment_history)
+    # Count resistant part
+    resistant_parameters_pred = Parameters((predicted_parameters.Y_0*predicted_parameters.pi_r), 1, predicted_parameters.g_r, predicted_parameters.g_s, predicted_parameters.k_1, predicted_parameters.sigma)
+    plotting_resistant_mprotein_values_pred = measure_Mprotein_noiseless(resistant_parameters_pred, plotting_times, treatment_history)
+
+    # Plot M protein values
+    plotheight = 1
+    maxdrugkey = 2
+    patient_count = 0
+
+    fig, ax1 = plt.subplots()
+    ax1.patch.set_facecolor('none')
+    # Plot sensitive and resistant
+    ax1.plot(plotting_times, plotting_resistant_mprotein_values, linestyle='-', marker='', zorder=3, color='r', label="Estimated M protein (resistant)")
+    # Plot sensitive and resistant
+    ax1.plot(plotting_times, plotting_resistant_mprotein_values_pred, linestyle='--', marker='', zorder=3, color='orange', label="Predicted M protein (resistant)")
+    # Plot total M protein
+    ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='k', label="Estimated M protein (total)")
+    # Plot total M protein, predicted
+    ax1.plot(plotting_times, plotting_mprotein_values_pred, linestyle='--', marker='', zorder=3, color='b', label="Predicted M protein (total)")
+
+    ax1.plot(measurement_times, observed_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
+    [ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
+
+    # Plot treatments
+    ax2 = ax1.twinx() 
+    for treat_index in range(len(treatment_history)):
+        this_treatment = treatment_history[treat_index]
+        if this_treatment.id != 0:
+            treatment_duration = this_treatment.end - this_treatment.start
+            if this_treatment.id > maxdrugkey:
+                maxdrugkey = this_treatment.id
+
+            #drugs_1 = list of drugs from dictionary mapping id-->druglist, key=this_treatment.id
+            #for ii in range(len(drugs_1)):
+            #    drugkey = drug_dictionary_OSLO[drugs_1[ii]]
+            #    if drugkey > maxdrugkey:
+            #        maxdrugkey = drugkey
+            #    #             Rectangle(             x                   y            ,        width      ,   height  , ...)
+            #    ax2.add_patch(Rectangle((this_treatment.start, drugkey - plotheight/2), treatment_duration, plotheight, zorder=2, color=drug_colordict[drugkey]))
+            ax2.add_patch(Rectangle((this_treatment.start, this_treatment.id - plotheight/2), treatment_duration, plotheight, zorder=2, color="lightskyblue")) #color=treat_colordict[treat_line_id]))
+
+    ax1.set_title(plot_title)
+    ax1.set_xlabel("Days")
+    ax1.set_ylabel("Serum Mprotein (g/dL)")
+    ax1.set_ylim(bottom=0, top=(1.1*max(observed_values)))
     #ax1.set_xlim(left=time_zero)
     ax2.set_ylabel("Treatment line. max="+str(maxdrugkey))
     ax2.set_yticks(range(maxdrugkey+1))
