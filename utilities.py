@@ -10,6 +10,8 @@ from copy import deepcopy
 
 def isNaN(string):
     return string != string
+def Sort(sub_li):
+    return(sorted(sub_li, key = lambda x: x[1]))
 
 np.random.seed(42)
 from numpy.random import MT19937
@@ -179,6 +181,29 @@ class COMMPASS_Patient:
         else:
             self.parameter_periods = np.append(self.parameter_periods, np.array([period]), axis=0)
             self.dummmy_patients = np.append(self.dummmy_patients, np.array([dummmy_patient]), axis=0)
+
+class Filter:
+    def __init__(self, filter_type, bandwidth, lag):
+        self.filter_type = filter_type # flat or Gaussian
+        self.bandwidth = bandwidth # days
+        self.lag = lag # days
+
+def compute_filter_values(this_filter, patient, end_of_history): # end_of_history: The time at which history ends and the treatment of interest begins 
+    # Returns a dictionary with key: drug_id (string) and value: filter feature value (float) for all drugs 
+    filter_end = max(0, end_of_history - this_filter.lag)
+    filter_start = max(0, end_of_history - this_filter.lag - this_filter.bandwidth)
+    # Loop through drug periods in patient history and update the filter values by computing overlap with filter interval 
+    #filter_value_dictionary = {k: 0 for k, v in drug_dictionary.items()}
+    filter_values = [0 for ii in range(len(drug_dictionary))]
+    for drug_period in patient.drug_history:
+        # Overlap = min(ends) - max(starts)
+        overlap = min(drug_period.end, filter_end) - max(drug_period.start, filter_start)
+        # Set 0 if negative
+        filter_addition = max(0, overlap)
+        #filter_value_dictionary[drug_period.id] = filter_value_dictionary[drug_period.id] + filter_addition
+        filter_values[drug_period.id] = filter_values[drug_period.id] + filter_addition
+    return filter_values
+    # This function is vectorized w.r.t different filters only, not drug ids or drug periods because two drug periods can have the same drug id 
 
 #####################################
 # Generative models, simulated data

@@ -48,11 +48,14 @@ df_drugs_and_dates = df_drugs_and_dates.dropna(subset=['PUBLIC_ID', 'MMTX_THERAP
 ## Only patient 1143 for testing
 #df_drugs_and_dates = df_drugs_and_dates[df_drugs_and_dates['PUBLIC_ID'] == 'MMRF_1293'] # 'MMRF_1293' another with 6,7,8 ; 'MMRF_1256' for only drug 8
 
+df_drugs_and_dates['drug_id'] = np.nan
 for index, row in df_drugs_and_dates.iterrows():
     if not isNaN(row['MMTX_THERAPY']): 
         patient_name = row['PUBLIC_ID']
         drug_name = row['MMTX_THERAPY']
         drug_id = drug_dictionary[drug_name]
+        # Temporary: Set drug id (continuous variable for feature extraction) for patients with that drug
+        df_drugs_and_dates.loc[(df_drugs_and_dates["MMTX_THERAPY"] == drug_name),'drug_id'] = drug_id
         drug_period_object = Drug_period(row['startday'], row['stopday'], drug_id)
         if not patient_name in COMMPASS_patient_dictionary.keys():
             # Add patient with drugs but no M protein measurements
@@ -191,14 +194,12 @@ minimum_number_of_measurements = 3
 number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = 0
 print("\nFinding right regions and estimating parameters...")
 # Iterate through patients
-# Identify valid periods and estimate parameters there: Y: (training_instance_id, parameters) X_periods = (training_instance_id, [start, end])
+# Identify valid periods and estimate parameters there: training_instance_dict = (training_instance_id, [start, end]). Y: (training_instance_id, parameters). 
 # Find patients with periods that satisfy criteria of enough M protein measurements under chosen treatment 
 # 1) Feature extract history up until period, put in X
 # 2) Estimate parameters in period, put in Y
 training_instance_id = 0
-df_mprotein_and_dates['training_instance_id'] = np.nan
-df_drugs_and_dates['training_instance_id'] = np.nan
-X_periods = {}
+training_instance_dict = {} # A dictionary mapping training_instance_id to the patient name and the start and end of the interval with the treatment of interest 
 Y_parameters = []
 N_iter = 1000
 threshold_for_closeness_for_M_protein_at_start = 60
@@ -267,15 +268,8 @@ for name, patient in COMMPASS_patient_dictionary.items():
                     # Only add as data instance to X and Y if there are enough valid times
                     if len(valid_times) >= minimum_number_of_measurements and min(valid_observations) > 0:
                         number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
-                        # Note the limits of this period
-                        X_periods[training_instance_id] = [patient.name, period_start, period_end] # optional
-                        # Define training data: History
-                        # Set training_instance_id for slice with correct patient id + M protein measurements within period:
-                        # All M protein BEFORE the current region
-                        #df_mprotein_and_dates.loc[(df_mprotein_and_dates["PUBLIC_ID"] == patient.name) & (df_mprotein_and_dates["VISITDY"] > period_start) & (df_mprotein_and_dates["VISITDY"] < period_end),'training_instance_id'] = training_instance_id
-                        df_mprotein_and_dates.loc[(df_mprotein_and_dates["PUBLIC_ID"] == patient.name) & (df_mprotein_and_dates["VISITDY"] < period_start),'training_instance_id'] = training_instance_id
-                        # All drug intervals that are BEFORE the current ragion 
-                        df_drugs_and_dates.loc[(df_drugs_and_dates["PUBLIC_ID"] == patient.name) & (df_drugs_and_dates["stopday"] <= period_start),'training_instance_id'] = training_instance_id
+                        # Note the time limits of this period
+                        training_instance_dict[training_instance_id] = [patient.name, period_start, period_end]
                         # Estimate parameters for a dummy patient within this interval
                         dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, observed_values=valid_observations, covariates=[], name="dummy")
                         this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
@@ -299,11 +293,8 @@ for name, patient in COMMPASS_patient_dictionary.items():
                         # Only add as data instance to X and Y if there are enough:
                         if len(valid_times) >= minimum_number_of_measurements and min(valid_observations) > 0:
                             number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
-                            # Note the limits of this period
-                            X_periods[training_instance_id] = [patient.name, period_start, period_end] # optional
-                            # Set training_instance_id for slice with correct patient id + M protein measurements within period:
-                            df_mprotein_and_dates.loc[(df_mprotein_and_dates["PUBLIC_ID"] == patient.name) & (df_mprotein_and_dates["VISITDY"] < period_start),'training_instance_id'] = training_instance_id
-                            df_drugs_and_dates.loc[(df_drugs_and_dates["PUBLIC_ID"] == patient.name) & (df_drugs_and_dates["stopday"] <= period_start),'training_instance_id'] = training_instance_id
+                            # Note the time limits of this period
+                            training_instance_dict[training_instance_id] = [patient.name, period_start, period_end]
                             # Estimate parameters for a dummy patient within this interval
                             dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, observed_values=valid_observations, covariates=[], name="dummy")
                             this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
@@ -326,11 +317,8 @@ for name, patient in COMMPASS_patient_dictionary.items():
                 # Only add as data instance to X and Y if there are enough:
                 if len(valid_times) >= minimum_number_of_measurements and min(valid_observations) > 0:
                     number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
-                    # Note the limits of this period
-                    X_periods[training_instance_id] = [patient.name, period_start, period_end] # optional
-                    # Set training_instance_id for slice with correct patient id + M protein measurements within period:
-                    df_mprotein_and_dates.loc[(df_mprotein_and_dates["PUBLIC_ID"] == patient.name) & (df_mprotein_and_dates["VISITDY"] < period_start),'training_instance_id'] = training_instance_id
-                    df_drugs_and_dates.loc[(df_drugs_and_dates["PUBLIC_ID"] == patient.name) & (df_drugs_and_dates["stopday"] <= period_start),'training_instance_id'] = training_instance_id
+                    # Note the time limits of this period
+                    training_instance_dict[training_instance_id] = [patient.name, period_start, period_end]
                     # Estimate parameters for a dummy patient within this interval
                     dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, observed_values=valid_observations, covariates=[], name="dummy")
                     this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
@@ -342,18 +330,6 @@ for name, patient in COMMPASS_patient_dictionary.items():
         for index, param_set in enumerate(patient.parameter_estimates):
             # Find parameter set and corresponding period
             estimated_parameters = patient.parameter_estimates[index]
-            #period_start, period_end = [patient.parameter_periods[index][ii] for ii in [0,1]]
-            ## Find valid observation at valid times:
-            #valid_observations = patient.observed_values[patient.measurement_times>=period_start]
-            #valid_times = patient.measurement_times[patient.measurement_times>=period_start]
-            #valid_observations = valid_observations[valid_times<=period_end]
-            #valid_times = valid_times[valid_times<=period_end]
-            ## Take the part of the history that is within the period of interest
-            #valid_history = np.array([])
-            #for treatment in patient.treatment_history:
-            #    if treatment.start >= period_start and treatment.end <= period_end:
-            #        valid_history = np.append(valid_history,[treatment])
-            #plot_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=valid_history, observed_values=valid_observations, covariates=[], name=patient.name)
             plot_patient = patient.dummmy_patients[index]
             savename = "./COMMPASS_estimate_plots/treatment_id_"+str(treatment_id_of_interest)+"/Treatment_"+str(treatment_id_of_interest)+"_nr"+str(index)+"_"+patient.name+"Y_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sigma="+str(estimated_parameters.sigma)+".png"
             plot_title = patient.name #+"\nY_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sig=", str(estimated_parameters.sigma)
@@ -368,8 +344,8 @@ for name, patient in COMMPASS_patient_dictionary.items():
 print("Treatment id of interest:", treatment_id_of_interest)
 print("Number of regions with", minimum_number_of_measurements, "or more M protein measurements:", number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id)
 
-np.save("X_periods.npy", X_periods)
-np.save("Y_parameters.npy", np.array(Y_parameters))
+np.save("training_instance_dict.npy", training_instance_dict)
+###np.save("Y_parameters.npy", np.array(Y_parameters))
 
 ###how_many_regions[treatment_id_of_interest] = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id
 ####print("Sort(enumerate(how_many_regions))", Sort(enumerate(how_many_regions)))
@@ -381,11 +357,11 @@ np.save("Y_parameters.npy", np.array(Y_parameters))
 ###    print("N =", patient_count, "   id = ", treatment_id, "    drugs:", drug_names)
 
 # Save (training_instance_id, PUBLIC_ID, [start, end]) to allow df selection out of df_mprotein and df_drugs for feature extraction indexed by training_instance_id
-df_mprotein_and_dates = df_mprotein_and_dates[df_mprotein_and_dates['training_instance_id'].notna()]
+###df_mprotein_and_dates = df_mprotein_and_dates[df_mprotein_and_dates['training_instance_id'].notna()]
 df_mprotein_and_dates.reset_index(drop=True, inplace=True)
 df_mprotein_and_dates.to_pickle("df_mprotein_and_dates.pkl")
 
-df_drugs_and_dates = df_drugs_and_dates[df_drugs_and_dates['training_instance_id'].notna()]
+###df_drugs_and_dates = df_drugs_and_dates[df_drugs_and_dates['training_instance_id'].notna()]
 df_drugs_and_dates.reset_index(drop=True, inplace=True)
 df_drugs_and_dates.to_pickle("df_drugs_and_dates.pkl")
 

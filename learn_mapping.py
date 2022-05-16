@@ -2,12 +2,13 @@
 # Extract features and learn the mapping from features to drug response parameters
 from utilities import *
 
-# Load X (period definitions) and Y (parameters)
-X_periods = np.load("X_periods.npy", allow_pickle=True).item()
+# Load period definitions
+training_instance_dict = np.load("training_instance_dict.npy", allow_pickle=True).item()
 df_mprotein_and_dates = pd.read_pickle("df_mprotein_and_dates.pkl")
 df_drugs_and_dates = pd.read_pickle("df_drugs_and_dates.pkl")
 #print(df_mprotein_and_dates.head(n=5))
 
+# load Y (parameters)
 picklefile = open('Y_parameters', 'rb')
 Y_parameters = pickle.load(picklefile)
 Y_parameters = [elem.to_prediction_array_composite_g_s_and_K_1() for elem in Y_parameters]
@@ -15,40 +16,78 @@ Y_parameters = np.array(Y_parameters)
 #print(Y_parameters)
 #plt.hist(Y_parameters[:,0]) # Half mixture params zero, half nonzero. Interesting! (Must address how sensitive sensitive are too)
 #plt.show()
-
 picklefile.close()
+
 picklefile = open('COMMPASS_patient_dictionary', 'rb')
 COMMPASS_patient_dictionary = pickle.load(picklefile)
 picklefile.close()
 
-# Prepare data by choosing only int & float valued columns 
-df_mprotein_and_dates = df_mprotein_and_dates[["training_instance_id", "D_LAB_serum_m_protein", "VISITDY"]]
-patient_with_training_instance_id_57 = pd.DataFrame({"training_instance_id":[57], "D_LAB_serum_m_protein":[0], "VISITDY":[0]})
-df_mprotein_and_dates = pd.concat([df_mprotein_and_dates, patient_with_training_instance_id_57], ignore_index=True)
+######################################################################
+# tsfresh feature extraction from numerical columns in the dataframes 
+######################################################################
+# This will not be used since it uses training instance id indexing into M protein and drugs data frames
 
-training_instance_id_list = pd.unique(df_mprotein_and_dates[['training_instance_id']].values.ravel('K'))
+# Choose relevant columns in mprotein df. Must be only int & float valued
+###df_mprotein_and_dates = df_mprotein_and_dates[["training_instance_id", "D_LAB_serum_m_protein", "VISITDY"]]
+###patient_with_training_instance_id_57 = pd.DataFrame({"training_instance_id":[57], "D_LAB_serum_m_protein":[0], "VISITDY":[0]})
+###df_mprotein_and_dates = pd.concat([df_mprotein_and_dates, patient_with_training_instance_id_57], ignore_index=True)
 
-# Prepare data by choosing only int & float valued columns: drug_id instead of MMTX_THERAPY
-df_drugs_and_dates = df_drugs_and_dates[['drug_id','startday', 'stopday', "training_instance_id"]]
-for training_instance_id in training_instance_id_list: 
-    if training_instance_id not in pd.unique(df_drugs_and_dates[['training_instance_id']].values.ravel('K')):
-        dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'drug_id':[0],'startday':[0], 'stopday':[0]})
-        df_drugs_and_dates = pd.concat([df_drugs_and_dates, dummy], ignore_index=True)
+###training_instance_id_list = pd.unique(df_mprotein_and_dates[['training_instance_id']].values.ravel('K'))
+training_instance_id_list = [key for key in training_instance_dict.keys()] 
 
-from tsfresh import extract_features
-extracted_features_M_protein = extract_features(df_mprotein_and_dates, column_id="training_instance_id", column_sort="VISITDY")
+# Choose relevant columns in drugs df. Must be only int & float valued: drug_id instead of MMTX_THERAPY
+###df_drugs_and_dates = df_drugs_and_dates[['drug_id','startday', 'stopday', "training_instance_id"]]
+###for training_instance_id in training_instance_id_list: 
+###    if training_instance_id not in pd.unique(df_drugs_and_dates[['training_instance_id']].values.ravel('K')):
+###        dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'drug_id':[0],'startday':[0], 'stopday':[0]})
+###        df_drugs_and_dates = pd.concat([df_drugs_and_dates, dummy], ignore_index=True)
+###
+###from tsfresh import extract_features
+###extracted_features_M_protein = extract_features(df_mprotein_and_dates, column_id="training_instance_id", column_sort="VISITDY")
+###
+###extracted_features_drugs = extract_features(df_drugs_and_dates, column_id="training_instance_id", column_sort="startday")
+######################################################################
 
-extracted_features_drugs = extract_features(df_drugs_and_dates, column_id="training_instance_id", column_sort="startday")
-
-# Impute nan and inf
-from tsfresh.utilities.dataframe_functions import impute
-impute(extracted_features_M_protein)
-impute(extracted_features_drugs)
-print(extracted_features_M_protein.index)
-print(extracted_features_drugs.index)
+#### Impute nan and inf
+###from tsfresh.utilities.dataframe_functions import impute
+###impute(extracted_features_M_protein)
+###impute(extracted_features_drugs)
+###print(extracted_features_M_protein.index)
+###print(extracted_features_drugs.index)
 
 # Merge drug and M protein data 
-extracted_features = extracted_features_drugs.join(extracted_features_M_protein) #, how="outer", on="training_instance_id")
+###extracted_features_tsfresh = extracted_features_drugs.join(extracted_features_M_protein) #, how="outer", on="training_instance_id")
+
+
+######################################################################
+# Add filter covariates 
+######################################################################
+df_X_covariates = pd.DataFrame({"training_instance_id": training_instance_id_list})
+drug_filter_flat_1 = Filter("flat", 30, 0)
+filter_bank = [drug_filter_flat_1]
+
+# Loop over training cases 
+for training_instance_id, value in training_instance_dict.items():
+    patient_name = value[0]
+    period_start = value[1]
+    period_end = value[2]
+    end_of_history = period_start # The time at which history ends and the treatment of interest begins 
+    
+    patient = COMMPASS_patient_dictionary[patient_name]
+    #for index, this_filter in enumerate(filter_bank):
+    #this_filter = drug_filter_flat_1
+    all_filter_values = [compute_filter_values(this_filter, patient, end_of_history) for this_filter in filter_bank]
+    # look at the shape of this and flatten in first dimension
+    all_filter_values = np.ndarray.flatten(np.array(all_filter_values))
+    print(all_filter_values[all_filter_values != 0])
+    # FF for Filter Features
+    #column_names = ["F"+str(int(index))+"D"+str(int(iii)) for iii in range(len(drug_dictionary))]
+    column_names = ["FF"+str(int(iii)) for iii in range(len(all_filter_values))]
+    df_X_covariates.loc[training_instance_id,column_names] = all_filter_values
+
+print(df_X_covariates.head(n=5))
+#extracted_features_filters = df_X_covariates
+#extracted_features = extracted_features_tsfresh.join(extracted_features_filters)
 
 randomnumberr = 4219
 # Add the drugs: 
@@ -63,7 +102,7 @@ from sklearn.model_selection import train_test_split
 #print(len(extracted_features))
 #print(len(Y_parameters))
 #print(Y_parameters)
-X_full_train, X_full_test, y_train, y_test = train_test_split(extracted_features, Y_parameters, test_size=.4, random_state=randomnumberr)
+X_full_train, X_full_test, y_train, y_test = train_test_split(df_X_covariates, Y_parameters, test_size=.4, random_state=randomnumberr)
 
 #print("X_full_test")
 #print(X_full_test.head(n=5))
