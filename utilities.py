@@ -6,6 +6,7 @@ import sys
 import pickle
 from scipy import optimize
 from scipy.optimize import least_squares
+import scipy.stats
 from copy import deepcopy
 
 def isNaN(string):
@@ -184,11 +185,11 @@ class COMMPASS_Patient:
 
 class Filter:
     def __init__(self, filter_type, bandwidth, lag):
-        self.filter_type = filter_type # flat or Gaussian
+        self.filter_type = filter_type # flat or gauss
         self.bandwidth = bandwidth # days
         self.lag = lag # days
 
-def compute_filter_values(this_filter, patient, end_of_history): # end_of_history: The time at which history ends and the treatment of interest begins 
+def compute_drug_filter_values(this_filter, patient, end_of_history): # end_of_history: The time at which history ends and the treatment of interest begins 
     # Returns a dictionary with key: drug_id (string) and value: filter feature value (float) for all drugs 
     filter_end = max(0, end_of_history - this_filter.lag)
     filter_start = max(0, end_of_history - this_filter.lag - this_filter.bandwidth)
@@ -204,6 +205,26 @@ def compute_filter_values(this_filter, patient, end_of_history): # end_of_histor
         filter_values[drug_period.id] = filter_values[drug_period.id] + filter_addition
     return filter_values
     # This function is vectorized w.r.t different filters only, not drug ids or drug periods because two drug periods can have the same drug id 
+
+def compute_Mprotein_filter_values(this_filter, patient, end_of_history): # end_of_history: The time at which history ends and the treatment of interest begins 
+    # Returns a dictionary with key: drug_id (string) and value: filter feature value (float) for all drugs 
+    filter_end = max(0, end_of_history - this_filter.lag)
+    filter_start = max(0, end_of_history - this_filter.lag - this_filter.bandwidth)
+    correct_times = (patient.measurement_times >= filter_start) & (patient.measurement_times <= filter_end)
+    if this_filter.filter_type == "flat":
+        filter_values = [sum(patient.observed_values[correct_times])]
+    elif this_filter.filter_type == "gauss":
+        # For Gaussian filters, lag = offset and bandwidth = variance
+        m_protein_values = patient.observed_values[correct_times]
+        time_deltas = patient.measurement_times[correct_times] - filter_end
+        gauss_weighting = scipy.stats.norm(filter_end, this_filter.bandwidth).pdf(time_deltas)
+        #if len(m_protein_values)> 0:
+        #    print("aaa")
+        #    print(m_protein_values)
+        #    print(gauss_weighting)
+        #    print(gauss_weighting * m_protein_values)
+        filter_values = [sum(gauss_weighting * m_protein_values)]
+    return filter_values
 
 #####################################
 # Generative models, simulated data

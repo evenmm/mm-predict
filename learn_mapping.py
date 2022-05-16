@@ -4,6 +4,7 @@ from utilities import *
 
 # Load period definitions
 training_instance_dict = np.load("training_instance_dict.npy", allow_pickle=True).item()
+training_instance_id_list = [key for key in training_instance_dict.keys()] 
 df_mprotein_and_dates = pd.read_pickle("df_mprotein_and_dates.pkl")
 df_drugs_and_dates = pd.read_pickle("df_drugs_and_dates.pkl")
 #print(df_mprotein_and_dates.head(n=5))
@@ -25,83 +26,110 @@ picklefile.close()
 ######################################################################
 # tsfresh feature extraction from numerical columns in the dataframes 
 ######################################################################
-# This will not be used since it uses training instance id indexing into M protein and drugs data frames
+# training_instance_dict is used to index into M protein and drug data frames
 
-# Choose relevant columns in mprotein df. Must be only int & float valued
-###df_mprotein_and_dates = df_mprotein_and_dates[["training_instance_id", "D_LAB_serum_m_protein", "VISITDY"]]
-###patient_with_training_instance_id_57 = pd.DataFrame({"training_instance_id":[57], "D_LAB_serum_m_protein":[0], "VISITDY":[0]})
-###df_mprotein_and_dates = pd.concat([df_mprotein_and_dates, patient_with_training_instance_id_57], ignore_index=True)
+# M protein
+# Subsets taken from df_mprotein_and_dates and labeled by training_instance_id for tsfresh feature extraction 
+df_Mprotein_pre_tsfresh = pd.DataFrame(columns=["D_LAB_serum_m_protein", "VISITDY", "training_instance_id"])
+for training_instance_id, value in training_instance_dict.items():
+    patient_name = value[0]
+    patient = COMMPASS_patient_dictionary[patient_name]
+    period_start = value[1]
+    period_end = value[2]
+    
+    single_entry = df_mprotein_and_dates[(df_mprotein_and_dates["PUBLIC_ID"] == patient_name) & (df_mprotein_and_dates["VISITDY"] > period_start) & (df_mprotein_and_dates["VISITDY"] < period_end)]
+    single_entry["training_instance_id"] = training_instance_id
+    df_Mprotein_pre_tsfresh = pd.concat([df_Mprotein_pre_tsfresh, single_entry])
+#print(df_Mprotein_pre_tsfresh.head(n=20))
 
-###training_instance_id_list = pd.unique(df_mprotein_and_dates[['training_instance_id']].values.ravel('K'))
-training_instance_id_list = [key for key in training_instance_dict.keys()] 
+# Drugs
+df_drugs_pre_tsfresh = pd.DataFrame(columns=['PUBLIC_ID', 'MMTX_THERAPY', 'drug_id', 'startday', 'stopday', "training_instance_id"])
+for training_instance_id, value in training_instance_dict.items():
+    patient_name = value[0]
+    patient = COMMPASS_patient_dictionary[patient_name]
+    period_start = value[1]
+    period_end = value[2]
+    
+    single_entry = df_drugs_and_dates[(df_drugs_and_dates["PUBLIC_ID"] == patient_name) & (df_drugs_and_dates["stopday"] <= period_end)]
+    single_entry["training_instance_id"] = training_instance_id
+    df_drugs_pre_tsfresh = pd.concat([df_drugs_pre_tsfresh, single_entry])
+#print(df_drugs_pre_tsfresh.head(n=20))
+# Add zero row if the id is missing from the drug df
+#for training_instance_id in training_instance_id_list: 
+#    if training_instance_id not in pd.unique(df_drugs_pre_tsfresh[['training_instance_id']].values.ravel('K')):
+#        dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'drug_id':[0],'startday':[0], 'stopday':[0]})
+#        df_drugs_pre_tsfresh = pd.concat([df_drugs_pre_tsfresh, dummy], ignore_index=True)
 
-# Choose relevant columns in drugs df. Must be only int & float valued: drug_id instead of MMTX_THERAPY
-###df_drugs_and_dates = df_drugs_and_dates[['drug_id','startday', 'stopday', "training_instance_id"]]
-###for training_instance_id in training_instance_id_list: 
-###    if training_instance_id not in pd.unique(df_drugs_and_dates[['training_instance_id']].values.ravel('K')):
-###        dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'drug_id':[0],'startday':[0], 'stopday':[0]})
-###        df_drugs_and_dates = pd.concat([df_drugs_and_dates, dummy], ignore_index=True)
-###
-###from tsfresh import extract_features
-###extracted_features_M_protein = extract_features(df_mprotein_and_dates, column_id="training_instance_id", column_sort="VISITDY")
-###
-###extracted_features_drugs = extract_features(df_drugs_and_dates, column_id="training_instance_id", column_sort="startday")
-######################################################################
+# Feature extraction requires only numerical values in columns
+from tsfresh import extract_features
+df_Mprotein_pre_tsfresh = df_Mprotein_pre_tsfresh[["D_LAB_serum_m_protein", "VISITDY", "training_instance_id"]] # Remove PUBLIC_ID
+extracted_features_M_protein = extract_features(df_Mprotein_pre_tsfresh, column_id="training_instance_id", column_sort="VISITDY")
 
-#### Impute nan and inf
-###from tsfresh.utilities.dataframe_functions import impute
-###impute(extracted_features_M_protein)
-###impute(extracted_features_drugs)
-###print(extracted_features_M_protein.index)
-###print(extracted_features_drugs.index)
+df_drugs_pre_tsfresh = df_drugs_pre_tsfresh[['drug_id','startday', 'stopday', "training_instance_id"]] # Remove PUBLIC_ID
+extracted_features_drugs = extract_features(df_drugs_pre_tsfresh, column_id="training_instance_id", column_sort="startday")
+###################################################################
+
+# Impute nan and inf
+from tsfresh.utilities.dataframe_functions import impute
+impute(extracted_features_M_protein)
+impute(extracted_features_drugs)
 
 # Merge drug and M protein data 
-###extracted_features_tsfresh = extracted_features_drugs.join(extracted_features_M_protein) #, how="outer", on="training_instance_id")
-
+extracted_features_tsfresh = extracted_features_drugs.join(extracted_features_M_protein) #, how="outer", on="training_instance_id")
 
 ######################################################################
 # Add filter covariates 
 ######################################################################
 df_X_covariates = pd.DataFrame({"training_instance_id": training_instance_id_list})
-drug_filter_flat_1 = Filter("flat", 30, 0)
-filter_bank = [drug_filter_flat_1]
+# Filter bank of (bandwidth, lag), in months: (1, 0), (3, 0), (6, 0), (12, 0), (12, 12), (12, 24). As in https://bmcbioinformatics.biomedcentral.com/articles/10.1186/s12859-014-0425-8
+flat_filter_1 = Filter("flat", 30, 0)
+flat_filter_2 = Filter("flat", 91, 0)
+flat_filter_3 = Filter("flat", 182, 0)
+flat_filter_4 = Filter("flat", 365, 0)
+flat_filter_5 = Filter("flat", 365, 365)
+flat_filter_6 = Filter("flat", 365, 2*365)
+flat_filter_bank = [flat_filter_1, flat_filter_2, flat_filter_3, flat_filter_4, flat_filter_5, flat_filter_6]
 
-# Loop over training cases 
+gauss_filter_1 = Filter("gauss", 30, 0)
+gauss_filter_2 = Filter("gauss", 91, 0)
+gauss_filter_3 = Filter("gauss", 182, 0)
+gauss_filter_4 = Filter("gauss", 365, 0)
+gauss_filter_5 = Filter("gauss", 365, 365)
+gauss_filter_6 = Filter("gauss", 365, 2*365)
+gauss_filter_bank = [gauss_filter_1, gauss_filter_2, gauss_filter_3, gauss_filter_4, gauss_filter_5, gauss_filter_6]
+full_filter_bank = flat_filter_bank + gauss_filter_bank
+
+# Loop over training cases and add row values to df_X_covariates
 for training_instance_id, value in training_instance_dict.items():
     patient_name = value[0]
     period_start = value[1]
     period_end = value[2]
     end_of_history = period_start # The time at which history ends and the treatment of interest begins 
-    
     patient = COMMPASS_patient_dictionary[patient_name]
-    #for index, this_filter in enumerate(filter_bank):
-    #this_filter = drug_filter_flat_1
-    all_filter_values = [compute_filter_values(this_filter, patient, end_of_history) for this_filter in filter_bank]
-    # look at the shape of this and flatten in first dimension
-    all_filter_values = np.ndarray.flatten(np.array(all_filter_values))
-    print(all_filter_values[all_filter_values != 0])
-    # FF for Filter Features
-    #column_names = ["F"+str(int(index))+"D"+str(int(iii)) for iii in range(len(drug_dictionary))]
-    column_names = ["FF"+str(int(iii)) for iii in range(len(all_filter_values))]
-    df_X_covariates.loc[training_instance_id,column_names] = all_filter_values
+    
+    # Drugs 
+    drug_filter_values = [compute_drug_filter_values(this_filter, patient, end_of_history) for this_filter in flat_filter_bank]
+    # Flatten the array to get a list of features for all drugs, all covariates
+    drug_filter_values = np.ndarray.flatten(np.array(drug_filter_values))
+    #print(drug_filter_values[drug_filter_values != 0])
+    column_names = ["DF"+str(int(iii)) for iii in range(len(drug_filter_values))]
+    df_X_covariates.loc[training_instance_id,column_names] = drug_filter_values
 
-print(df_X_covariates.head(n=5))
-#extracted_features_filters = df_X_covariates
-#extracted_features = extracted_features_tsfresh.join(extracted_features_filters)
+    # M protein
+    Mprotein_filter_values = [compute_Mprotein_filter_values(this_filter, patient, end_of_history) for this_filter in full_filter_bank]
+    # Flatten the array to get a list of features for all drugs, all covariates
+    Mprotein_filter_values = np.ndarray.flatten(np.array(Mprotein_filter_values))
+    #print(Mprotein_filter_values) #[Mprotein_filter_values != 0])
+    column_names = ["MF"+str(int(iii)) for iii in range(len(Mprotein_filter_values))]
+    df_X_covariates.loc[training_instance_id,column_names] = Mprotein_filter_values
 
-randomnumberr = 4219
-# Add the drugs: 
-# ...
+#print(df_X_covariates.head(n=5))
+extracted_features = extracted_features_tsfresh.join(df_X_covariates)
+#print(extracted_features.head(n=5))
 
-#print(extracted_features.index) #.head(n=5))
 # Split into train and test 
 from sklearn.model_selection import train_test_split
-#print(extracted_features.loc[].head(n=5))
-#for col in extracted_features.columns:
-#    print(col)
-#print(len(extracted_features))
-#print(len(Y_parameters))
-#print(Y_parameters)
+randomnumberr = 4219
 X_full_train, X_full_test, y_train, y_test = train_test_split(df_X_covariates, Y_parameters, test_size=.4, random_state=randomnumberr)
 
 #print("X_full_test")
