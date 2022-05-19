@@ -181,11 +181,14 @@ treatment_id_of_interest = 15 # Dex+Len+Bor #COMMPASS_patient_dictionary["MMRF_1
 #print("Treatment id of interest:", treatment_id_of_interest)
 
 ## Inference
+# The length of ub and lb implicitly decides whether the effect of treatment is given a parameter or not. 
+# If len(ub) = 4, then it is assumed that only periods under treatment are considered
+# If len(ub) = 5, then k_1 models the effect of the drug on the sensitive population
 # Simple exponential growth model with 2 populations, where only one is affected by treatment
 # The parameters we estimate are 
 #               Y_0, pi_r,   g_r,   g_s,  k_1,  sigma
-lb = np.array([  0,    0,  0.00,  0.00, 0.00]) #, 10e-6])
-ub = np.array([100,    1,  2e-1,  1e-1, 1e-0]) #, 10e4])
+lb = np.array([  0,    0,  0.00, -1e-0]) #0.00, 10e-6])
+ub = np.array([100,    1,  2e-1,  0.00]) #1e-1, 10e4])
 # Y_0=50, pi_r=0.10, g_r=2e-3, g_s=1e-2, k_1=3e-2
 
 # A training instance is a pair of history covariates X and estimated parameters Y
@@ -253,32 +256,32 @@ for name, patient in COMMPASS_patient_dictionary.items():
                 if treatment.id == treatment_id_of_interest:
                     this_history = np.append(this_history,[treatment])
                     pass
-                elif treatment.id == 0:
-                    # Only after the id of interest. We are extending the period by a drug holiday, then ending the period at the end of this treatment
-                    if patient.name == "MMRF_1793":
-                        treatment = Treatment(treatment.start, 1770, treatment.id)
-                    this_history = np.append(this_history,[treatment])
-                    valid_interval = False
-                    period_end = treatment.end
-                    # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
-                    valid_observations = dummy_observed_values[dummy_measurement_times>=period_start]
-                    valid_times = dummy_measurement_times[dummy_measurement_times>=period_start]
-                    valid_observations = valid_observations[valid_times<=period_end]
-                    valid_times = valid_times[valid_times<=period_end]
-                    # Only add as data instance to X and Y if there are enough valid times
-                    if len(valid_times) >= minimum_number_of_measurements and min(valid_observations) > 0:
-                        number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
-                        # Note the time limits of this period
-                        training_instance_dict[training_instance_id] = [patient.name, period_start, period_end]
-                        # Estimate parameters for a dummy patient within this interval
-                        dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, observed_values=valid_observations, covariates=[], name="dummy")
-                        this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
-                        # Add estimates to Y_parameters
-                        Y_parameters.append(this_estimate) # training_instance_id is position in Y_parameters
-                        patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
-                        training_instance_id = training_instance_id + 1
-                    dummy_measurement_times = np.array([])
-                    dummy_observed_values = np.array([])
+                #elif treatment.id == 0:
+                #    # Only after the id of interest. We are extending the period by a drug holiday, then ending the period at the end of this treatment
+                #    if patient.name == "MMRF_1793":
+                #        treatment = Treatment(treatment.start, 1770, treatment.id)
+                #    this_history = np.append(this_history,[treatment])
+                #    valid_interval = False
+                #    period_end = treatment.end
+                #    # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
+                #    valid_observations = dummy_observed_values[dummy_measurement_times>=period_start]
+                #    valid_times = dummy_measurement_times[dummy_measurement_times>=period_start]
+                #    valid_observations = valid_observations[valid_times<=period_end]
+                #    valid_times = valid_times[valid_times<=period_end]
+                #    # Only add as data instance to X and Y if there are enough valid times
+                #    if len(valid_times) >= minimum_number_of_measurements and min(valid_observations) > 0:
+                #        number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
+                #        # Note the time limits of this period
+                #        training_instance_dict[training_instance_id] = [patient.name, period_start, period_end]
+                #        # Estimate parameters for a dummy patient within this interval
+                #        dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, observed_values=valid_observations, covariates=[], name="dummy")
+                #        this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
+                #        # Add estimates to Y_parameters
+                #        Y_parameters.append(this_estimate) # training_instance_id is position in Y_parameters
+                #        patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
+                #        training_instance_id = training_instance_id + 1
+                #    dummy_measurement_times = np.array([])
+                #    dummy_observed_values = np.array([])
                 else: 
                     # We found the end at the beginning of this foreign treatment id
                     valid_interval = False

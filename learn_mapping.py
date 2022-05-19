@@ -1,6 +1,8 @@
 # Take history regions and estimates
 # Extract features and learn the mapping from features to drug response parameters
 from utilities import *
+import warnings
+warnings.simplefilter("ignore")
 
 # Load period definitions
 training_instance_dict = np.load("training_instance_dict.npy", allow_pickle=True).item()
@@ -12,7 +14,7 @@ df_drugs_and_dates = pd.read_pickle("df_drugs_and_dates.pkl")
 # load Y (parameters)
 picklefile = open('Y_parameters', 'rb')
 Y_parameters = pickle.load(picklefile)
-Y_parameters = [elem.to_prediction_array_composite_g_s_and_K_1() for elem in Y_parameters]
+Y_parameters = [elem.to_prediction_array_composite_g_s_and_K_1()[0] for elem in Y_parameters]
 Y_parameters = np.array(Y_parameters)
 #print(Y_parameters)
 #plt.hist(Y_parameters[:,0]) # Half mixture params zero, half nonzero. Interesting! (Must address how sensitive sensitive are too)
@@ -127,24 +129,31 @@ for training_instance_id, value in training_instance_dict.items():
 extracted_features = extracted_features_tsfresh.join(df_X_covariates)
 #print(extracted_features.head(n=5))
 
+######################################################################
 # Split into train and test 
+######################################################################
 from sklearn.model_selection import train_test_split
-randomnumberr = 4219
-X_full_train, X_full_test, y_train, y_test = train_test_split(df_X_covariates, Y_parameters, test_size=.4, random_state=randomnumberr)
-
-#print("X_full_test")
-#print(X_full_test.head(n=5))
-
-# Train a very naive decision tree (Full)
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import classification_report
 from sklearn.metrics import r2_score
-random_forest_model = RandomForestRegressor(random_state=randomnumberr)
-random_forest_model.fit(X_full_train, y_train)
-y_pred = random_forest_model.predict(X_full_test)
-y_pred_train = random_forest_model.predict(X_full_train)
-print("R2 score train:", r2_score(y_train, y_pred_train))
-print("R2 score test:", r2_score(y_test, y_pred))
+# Train a random forest regressor
+randomnumberr = 4219
+random_forest_model = RandomForestRegressor(n_estimators=1000, random_state=randomnumberr)
+
+r2scores_train = []
+r2scores_test = []
+print("Training and testing")
+for ii in range(50):
+    X_full_train, X_full_test, y_train, y_test = train_test_split(df_X_covariates, Y_parameters, test_size=.4, random_state=ii+randomnumberr)
+    random_forest_model.fit(X_full_train, y_train)
+    y_pred = random_forest_model.predict(X_full_test)
+    y_pred_train = random_forest_model.predict(X_full_train)
+    r2scores_train.append(r2_score(y_train, y_pred_train))
+    r2scores_test.append(r2_score(y_test, y_pred))
+
+######################################################################
+print("Average R2 score train:", np.mean(r2scores_train), "std:", np.std(r2scores_train))
+print("Average R2 score test:", np.mean(r2scores_test), "std:", np.std(r2scores_test))
 
 # Print true and estimated
 #for index, elem in enumerate(y_pred):
@@ -152,8 +161,9 @@ print("R2 score test:", r2_score(y_test, y_pred))
 #    print(y_test[index][1], ":", y_pred[index][1])
 #    print(y_test[index][2], ":", y_pred[index][2], "\n")
 
-plt.figure()
 s = 25
+"""
+plt.figure()
 plt.scatter(y_test[:, 0], y_test[:, 1], c="navy", s=s, edgecolor="black", label="Data")
 plt.scatter(y_pred[:, 0], y_pred[:, 1], c="red", s=s, edgecolor="black", label="Prediction")
 #plt.xlim([-6, 6])
@@ -164,15 +174,19 @@ plt.title("Compare truth and predictions")
 plt.legend(loc="best")
 #plt.show()
 plt.close()
+"""
 
+compare_pi_r = [[y_pred[ii], y_test[ii]] for ii, elem in enumerate(y_test)]
+"""
 # These comparison lists of parameters contain pairs of (prediction, truth), sorted by truth, for plotting 
 compare_pi_r = [[y_pred[ii][0], y_test[ii][0]] for ii, elem in enumerate(y_test)]
 compare_g_r = [[y_pred[ii][1], y_test[ii][1]] for ii, elem in enumerate(y_test)]
 compare_g_s = [[y_pred[ii][2], y_test[ii][2]] for ii, elem in enumerate(y_test)]
+"""
 
 def sort_by_test(pred_in, test_in, index):
     # index 0: pi_r. index 1: g_r
-    compare = [[pred_in[ii][index], test_in[ii][index]] for ii, elem in enumerate(test_in)]
+    compare = [[pred_in[ii], test_in[ii]] for ii, elem in enumerate(test_in)]
     sorted_compare = Sort(compare)
     pred_array = [elem[0] for elem in sorted_compare]
     test_array = [elem[1] for elem in sorted_compare]
@@ -182,6 +196,7 @@ compare_pi_r = Sort(compare_pi_r)
 compare_pi_r_pred = [elem[0] for elem in compare_pi_r]
 compare_pi_r_test = [elem[1] for elem in compare_pi_r]
 
+"""
 compare_g_r = Sort(compare_g_r)
 compare_g_r_pred = [elem[0] for elem in compare_g_r]
 compare_g_r_test = [elem[1] for elem in compare_g_r]
@@ -189,6 +204,7 @@ compare_g_r_test = [elem[1] for elem in compare_g_r]
 compare_g_s = Sort(compare_g_s)
 compare_g_s_pred = [elem[0] for elem in compare_g_s]
 compare_g_s_test = [elem[1] for elem in compare_g_s]
+"""
 
 def make_figure(pred_array, test_array, name):
     plt.figure()
@@ -198,17 +214,19 @@ def make_figure(pred_array, test_array, name):
     plt.ylabel(name+": Fraction resistant cells")
     plt.title("Train data: Compare truth and predictions")
     plt.legend(loc="best")
-    plt.savefig("diagnostics_train_"+name+"_estimate_compared_to_truth.png")
+    plt.savefig("./diagnostics_train_"+name+"_estimate_compared_to_truth.png")
     plt.show()
 
 # pi_r, g_r, g_s
 #for iii in range(3):
 pred_array, test_array = sort_by_test(y_pred_train, y_train, 0)
 make_figure(pred_array, test_array, "pi_r")
+"""
 pred_array, test_array = sort_by_test(y_pred_train, y_train, 1)
 make_figure(pred_array, test_array, "g_r")
 pred_array, test_array = sort_by_test(y_pred_train, y_train, 2)
 make_figure(pred_array, test_array, "g_s")
+"""
 
 plt.figure()
 plt.scatter(range(len(compare_pi_r_test)), compare_pi_r_test, c="navy", s=s, edgecolor="black", label="Data")
@@ -217,8 +235,9 @@ plt.xlabel("Sorted by true pi_R")
 plt.ylabel("pi_R: Fraction resistant cells")
 plt.title("Compare truth and predictions")
 plt.legend(loc="best")
-plt.savefig("diagnostics_pi_R_estimate_compared_to_truth.png")
+plt.savefig("./diagnostics_pi_R_estimate_compared_to_truth.png")
 plt.show()
+"""
 
 plt.figure()
 plt.scatter(range(len(compare_g_r_test)), compare_g_r_test, c="navy", s=s, edgecolor="black", label="Data")
@@ -254,4 +273,5 @@ plt.show()
 #    savename = "./COMPASS_plot_comparisons/compare_predicted_with_estimated"+patient.name+".png"
 #    plot_to_compare_estimated_and_predicted_drug_dynamics(estimated_parameters, predicted_parameters, patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=patient.name, savename=savename)
 
+"""
 

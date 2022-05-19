@@ -539,6 +539,8 @@ def least_squares_objective_function(array_x, patient):
     treatment_history = patient.treatment_history
     observations = patient.observed_values
 
+    if len(array_x) == 4:
+        array_x = np.concatenate((array_x, [0]))
     Parameter_object_x = Parameters(Y_0=array_x[0], pi_r=array_x[1], g_r=array_x[2], g_s=array_x[3], k_1=array_x[4], sigma=global_sigma)
     predictions = measure_Mprotein_noiseless(Parameter_object_x, measurement_times, treatment_history)
     sumofsquares = np.sum((observations - predictions)**2)
@@ -567,12 +569,14 @@ def infer_parameters_simulated_patient(patient, lb, ub, N_iterations=10000):
     return best_optim
 
 def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
-    bounds_Y_0 = (lb[0], ub[0])
-    bounds_pi_r = (lb[1], ub[1])
-    bounds_g_r = (lb[2], ub[2])
-    bounds_g_s = (lb[3], ub[3])
-    bounds_k_1 = (lb[4], ub[4])
-    all_bounds = (bounds_Y_0, bounds_pi_r, bounds_g_r, bounds_g_s, bounds_k_1)
+    # If the bounds do not include bounds for k_1, we set it to zero before and after optimization
+    #bounds_Y_0 = (lb[0], ub[0])
+    #bounds_pi_r = (lb[1], ub[1])
+    #bounds_g_r = (lb[2], ub[2])
+    #bounds_g_s = (lb[3], ub[3])
+    #bounds_k_1 = (lb[4], ub[4])
+    #all_bounds = (bounds_Y_0, bounds_pi_r, bounds_g_r, bounds_g_s) #, bounds_k_1)
+    all_bounds = tuple([(lb[ii], ub[ii]) for ii in range(len(ub))])
     lowest_f_value = np.inf
     random_samples = np.random.uniform(0,1,len(ub))
     x0 = lb + np.multiply(random_samples, (ub-lb))
@@ -585,4 +589,7 @@ def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
             lowest_f_value = optimization_result.fun
             best_optim = optimization_result
     best_x = best_optim.x
-    return Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=global_sigma)
+    if len(ub) == 5: # k_1 included in parameters, rdug holiday included in interval
+        return Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=global_sigma)
+    elif len(ub) == 4: # k_1 included in parameters, rdug holiday included in interval
+        return Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=0, sigma=global_sigma)
