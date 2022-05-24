@@ -41,6 +41,11 @@ treatment_to_id_dictionary = np.load("treatment_to_id_dictionary_OSLO.npy", allo
 #treatment_to_id_dictionary = np.load("treatment_to_id_dictionary_COMMPASS.npy", allow_pickle=True).item()
 treatment_id_to_drugs_dictionary = {v: k for k, v in treatment_to_id_dictionary.items()}
 
+def get_drug_names_from_treatment_id_COMMPASS(treatment_id, treatment_id_to_drugs_dictionary_COMMPASS):
+    drug_set = treatment_id_to_drugs_dictionary_COMMPASS[treatment_id]
+    drug_names = [drug_id_to_name_dictionary[elem] for elem in drug_set]
+    return drug_names
+
 #unique_drugs = ['Revlimid (lenalidomide)', 'Cyclophosphamide', 'Pomalidomide',
 # 'Thalidomide', 'Velcade (bortezomib) - subcut twice weekly',
 # 'Dexamethasone', 'Velcade (bortezomib) - subcut once weekly', 'Carfilzomib',
@@ -116,20 +121,20 @@ class Patient:
     def __init__(self, parameters, measurement_times, treatment_history, covariates = []):
         self.measurement_times = measurement_times
         self.treatment_history = treatment_history
-        self.observed_values = measure_Mprotein_with_noise(parameters, self.measurement_times, self.treatment_history)
+        self.Mprotein_values = measure_Mprotein_with_noise(parameters, self.measurement_times, self.treatment_history)
         self.covariates = covariates
     def get_measurement_times(self):
         return self.measurement_times
     def get_treatment_history(self):
         return self.treatment_history
-    def get_observed_values(self):
-        return self.observed_values
+    def get_Mprotein_values(self):
+        return self.Mprotein_values
 
 class COMMPASS_Patient: 
-    def __init__(self, measurement_times, drug_dates, drug_history, treatment_history, observed_values, covariates, name):
+    def __init__(self, measurement_times, drug_dates, drug_history, treatment_history, Mprotein_values, Kappa_values, Lambda_values, covariates, name):
         self.name = name # string: patient id
-        self.measurement_times = measurement_times # numpy array: dates for M protein measurements in observed_values
-        self.observed_values = observed_values # numpy array: M protein measurements
+        self.measurement_times = measurement_times # numpy array: dates for M protein measurements in Mprotein_values
+        self.Mprotein_values = Mprotein_values # numpy array: M protein measurements
         self.drug_history = drug_history # numpy array of possibly overlapping single Drug_period instances, a pre-step to make treatment_history
         self.drug_dates = drug_dates # set: set of drug dates that marks the intervals 
         self.treatment_history = treatment_history # numpy array of non-overlapping Treatment instances (drug combinations) sorted by occurrence
@@ -137,18 +142,20 @@ class COMMPASS_Patient:
         self.parameter_estimates = np.array([])
         self.parameter_periods = np.array([])
         self.dummmy_patients = np.array([])
+        self.Kappa_values = Kappa_values
+        self.Lambda_values = Lambda_values
     def get_measurement_times(self):
         return self.measurement_times
     def get_treatment_history(self):
         return self.treatment_history
     def get_drug_history(self):
         return self.drug_history
-    def get_observed_values(self):
-        return self.observed_values
+    def get_Mprotein_values(self):
+        return self.Mprotein_values
     def print(self):
         print("\nPrinting patient "+self.name)
         print("M protein values:")
-        print(self.observed_values)
+        print(self.Mprotein_values)
         print("Measurement times:")
         print(self.measurement_times)
         print("Drug history:")
@@ -160,9 +167,11 @@ class COMMPASS_Patient:
         print("Estimated parameters by period:")
         for number, parameters in enumerate(self.parameter_estimates):
             print(parameters.to_array_without_sigma(), "in", self.parameter_periods[number])
-    def add_Mprotein_line_to_patient(self, time, value):
+    def add_Mprotein_line_to_patient(self, time, Mprotein, Kappa, Lambda):
         self.measurement_times = np.append(self.measurement_times,[time])
-        self.observed_values = np.append(self.observed_values,[value])
+        self.Mprotein_values = np.append(self.Mprotein_values,[Mprotein])
+        self.Kappa_values = np.append(self.Kappa_values,[Kappa])
+        self.Lambda_values = np.append(self.Lambda_values,[Lambda])
         return 0
     def add_drug_period_to_patient(self, drug_period_object):
         self.drug_history = np.append(self.drug_history,[drug_period_object])
@@ -206,24 +215,25 @@ def compute_drug_filter_values(this_filter, patient, end_of_history): # end_of_h
     return filter_values
     # This function is vectorized w.r.t different filters only, not drug ids or drug periods because two drug periods can have the same drug id 
 
-def compute_Mprotein_filter_values(this_filter, patient, end_of_history): # end_of_history: The time at which history ends and the treatment of interest begins 
+def compute_filter_values(this_filter, patient, end_of_history, value_type="Mprotein"): # end_of_history: The time at which history ends and the treatment of interest begins 
     # Returns a dictionary with key: drug_id (string) and value: filter feature value (float) for all drugs 
     filter_end = max(0, end_of_history - this_filter.lag)
     filter_start = max(0, end_of_history - this_filter.lag - this_filter.bandwidth)
     correct_times = (patient.measurement_times >= filter_start) & (patient.measurement_times <= filter_end)
+    if value_type == "Mprotein":
+        type_values = patient.Mprotein_values[correct_times]
+    elif value_type == "Kappa":
+        type_values = patient.Kappa_values[correct_times]
+    elif value_type == "Lambda":
+        type_values = patient.Lambda_values[correct_times]
     if this_filter.filter_type == "flat":
-        filter_values = [sum(patient.observed_values[correct_times])]
+        filter_values = [sum(type_values)]
     elif this_filter.filter_type == "gauss":
         # For Gaussian filters, lag = offset and bandwidth = variance
-        m_protein_values = patient.observed_values[correct_times]
+        values = type_values
         time_deltas = patient.measurement_times[correct_times] - filter_end
         gauss_weighting = scipy.stats.norm(filter_end, this_filter.bandwidth).pdf(time_deltas)
-        #if len(m_protein_values)> 0:
-        #    print("aaa")
-        #    print(m_protein_values)
-        #    print(gauss_weighting)
-        #    print(gauss_weighting * m_protein_values)
-        filter_values = [sum(gauss_weighting * m_protein_values)]
+        filter_values = [sum(gauss_weighting * values)]
     return filter_values
 
 #####################################
@@ -244,8 +254,10 @@ def generate_sensitive_Mprotein(Y_t, params, delta_T_values, drug_effect):
 # Input: a Parameter object, a numpy array of time points in days, a list of back-to-back Treatment objects
 def measure_Mprotein_noiseless(params, measurement_times, treatment_history):
     Mprotein_values = np.zeros_like(measurement_times)
-    Y_t = params.Y_0
-    pi_r_t = params.pi_r
+    # Adding a small epsilon to Y and pi_r to improve numerical stability
+    epsilon_value = 1e-8
+    Y_t = params.Y_0# + epsilon_value
+    pi_r_t = params.pi_r# + epsilon_value
     t_params = Parameters(Y_t, pi_r_t, params.g_r, params.g_s, params.k_1, params.sigma)
     for treat_index in range(len(treatment_history)):
         # Find the correct drug effect k_1
@@ -276,8 +288,8 @@ def measure_Mprotein_noiseless(params, measurement_times, treatment_history):
         # Assign M protein values for measurement times that are in this treatment period
         Mprotein_values[correct_times] = recorded_and_endtime_mprotein_values[0:-1]
         # Store Mprotein value at the end of this treatment:
-        Y_t = recorded_and_endtime_mprotein_values[-1]
-        pi_r_t = resistant_mprotein[-1] / (resistant_mprotein[-1] + sensitive_mprotein[-1])
+        Y_t = recorded_and_endtime_mprotein_values[-1]# + epsilon_value
+        pi_r_t = resistant_mprotein[-1] / (resistant_mprotein[-1] + sensitive_mprotein[-1] + epsilon_value) # Add a small number to keep numerics ok
         t_params = Parameters(Y_t, pi_r_t, t_params.g_r, t_params.g_s, t_params.k_1, t_params.sigma)
     return Mprotein_values
 
@@ -314,7 +326,7 @@ def measure_Mprotein_naive(params, measurement_times, treatment_history):
 def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parameters, patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title="Patient 1", savename=0):
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
-    observed_values = patient.get_observed_values()
+    Mprotein_values = patient.get_Mprotein_values()
     first_time = min(measurement_times[0], treatment_history[0].start)
     plotting_times = np.linspace(first_time, int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
     
@@ -327,7 +339,6 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
     # Plot M protein values
     plotheight = 1
     maxdrugkey = 2
-    patient_count = 0
 
     fig, ax1 = plt.subplots()
     ax1.patch.set_facecolor('none')
@@ -340,7 +351,7 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
         estimated_mprotein_values = measure_Mprotein_noiseless(estimated_parameters, plotting_times, treatment_history)
         ax1.plot(plotting_times, estimated_mprotein_values, linestyle='--', linewidth=2, marker='', zorder=3, color='b', label="Estimated M protein")
 
-    ax1.plot(measurement_times, observed_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
+    ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
 
     # Plot treatments
     ax2 = ax1.twinx() 
@@ -385,7 +396,7 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
 def plot_treatment_region_with_estimate(true_parameters, patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title="Patient 1", savename=0):
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
-    observed_values = patient.get_observed_values()
+    Mprotein_values = patient.get_Mprotein_values()
     time_zero = min(treatment_history[0].start, measurement_times[0])
     time_max = max(treatment_history[-1].end, int(measurement_times[-1]))
     plotting_times = np.linspace(time_zero, time_max, int((measurement_times[-1]+1)*10))
@@ -398,8 +409,7 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
 
     # Plot M protein values
     plotheight = 1
-    maxdrugkey = 2
-    patient_count = 0
+    maxdrugkey = 0
 
     fig, ax1 = plt.subplots()
     ax1.patch.set_facecolor('none')
@@ -408,7 +418,7 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     # Plot total M protein
     ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='k', label="Estimated M protein (total)")
 
-    ax1.plot(measurement_times, observed_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
+    ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
     [ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
 
     # Plot treatments
@@ -432,16 +442,16 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     ax1.set_title(plot_title)
     ax1.set_xlabel("Days")
     ax1.set_ylabel("Serum Mprotein (g/dL)")
-    ax1.set_ylim(bottom=0, top=(1.1*max(observed_values)))
+    ax1.set_ylim(bottom=0, top=(1.1*max(Mprotein_values)))
     #ax1.set_xlim(left=time_zero)
-    ax2.set_ylabel("Treatment line. max="+str(maxdrugkey))
-    ax2.set_yticks(range(maxdrugkey+1))
-    ax2.set_yticklabels(range(maxdrugkey+1))
-    ax2.set_ylim(bottom=0, top=maxdrugkey+plotheight/2)
+    ax2.set_ylabel("Treatment id for blue region")
+    ax2.set_yticks([maxdrugkey])
+    ax2.set_yticklabels([maxdrugkey])
+    ax2.set_ylim(bottom=maxdrugkey-plotheight, top=maxdrugkey+plotheight)
     #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
     ax1.set_zorder(ax1.get_zorder()+3)
     ax1.legend()
-    ax2.legend()
+    #ax2.legend() # For drugs, no handles with labels found to put in legend.
     fig.tight_layout()
     plt.savefig(savename)
     #plt.show()
@@ -451,7 +461,7 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
 def plot_to_compare_estimated_and_predicted_drug_dynamics(true_parameters, predicted_parameters, patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title="Patient 1", savename=0):
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
-    observed_values = patient.get_observed_values()
+    Mprotein_values = patient.get_Mprotein_values()
     time_zero = min(treatment_history[0].start, measurement_times[0])
     time_max = max(treatment_history[-1].end, int(measurement_times[-1]))
     plotting_times = np.linspace(time_zero, time_max, int((measurement_times[-1]+1)*10))
@@ -471,7 +481,6 @@ def plot_to_compare_estimated_and_predicted_drug_dynamics(true_parameters, predi
     # Plot M protein values
     plotheight = 1
     maxdrugkey = 2
-    patient_count = 0
 
     fig, ax1 = plt.subplots()
     ax1.patch.set_facecolor('none')
@@ -484,7 +493,7 @@ def plot_to_compare_estimated_and_predicted_drug_dynamics(true_parameters, predi
     # Plot total M protein, predicted
     ax1.plot(plotting_times, plotting_mprotein_values_pred, linestyle='--', marker='', zorder=3, color='b', label="Predicted M protein (total)")
 
-    ax1.plot(measurement_times, observed_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
+    ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
     [ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
 
     # Plot treatments
@@ -508,7 +517,7 @@ def plot_to_compare_estimated_and_predicted_drug_dynamics(true_parameters, predi
     ax1.set_title(plot_title)
     ax1.set_xlabel("Days")
     ax1.set_ylabel("Serum Mprotein (g/dL)")
-    ax1.set_ylim(bottom=0, top=(1.1*max(observed_values)))
+    ax1.set_ylim(bottom=0, top=(1.1*max(Mprotein_values)))
     #ax1.set_xlim(left=time_zero)
     ax2.set_ylabel("Treatment line. max="+str(maxdrugkey))
     ax2.set_yticks(range(maxdrugkey+1))
@@ -537,7 +546,7 @@ def least_squares_objective_function_patient_1(array_x, measurement_times, treat
 def least_squares_objective_function(array_x, patient):
     measurement_times = patient.measurement_times
     treatment_history = patient.treatment_history
-    observations = patient.observed_values
+    observations = patient.Mprotein_values
 
     if len(array_x) == 4:
         array_x = np.concatenate((array_x, [0]))

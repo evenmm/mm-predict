@@ -30,6 +30,7 @@ COMMPASS_patient_dictionary = {}
 ## Only patient 1143 for testing
 #df_mprotein_and_dates = df_mprotein_and_dates[df_mprotein_and_dates['PUBLIC_ID'] == 'MMRF_1293'] # 'MMRF_1293' another with 6,7,8 ; 'MMRF_1256' for only drug 8
 
+print("Iterating the M protein file and making patients of all the entries")
 # Iterate the M protein file and make patients of all the entries
 for index, row in df_mprotein_and_dates.iterrows():
     patient_name = row['PUBLIC_ID']
@@ -38,6 +39,7 @@ for index, row in df_mprotein_and_dates.iterrows():
     else:
         COMMPASS_patient_dictionary[patient_name].add_Mprotein_line_to_patient(row['VISITDY'], row['D_LAB_serum_m_protein'], row['D_LAB_serum_kappa'], row['D_LAB_serum_lambda'])
 
+print("Adding drugs")
 # Add drugs 
 filename = './COMMPASS_data/CoMMpass_IA17_FlatFiles/MMRF_CoMMpass_IA17_STAND_ALONE_TREATMENT_REGIMEN_V2.tsv'
 df = pd.read_csv(filename, sep='\t')
@@ -112,10 +114,10 @@ for patient_name, patient_object in COMMPASS_patient_dictionary.items():
             # Now we are in the interval following this_date, and we know which drugs are active here. 
         # At the end of the loop all drugs are turned off
 treatment_id_to_drugs_dictionary_COMMPASS = {v: k for k, v in treatment_to_id_dictionary_COMMPASS.items()}
-def get_drug_names_from_treatment_id(treatment_id):
-    drug_set = treatment_id_to_drugs_dictionary_COMMPASS[treatment_id]
-    drug_names = [drug_id_to_name_dictionary[elem] for elem in drug_set]
-    return drug_names
+# Save it here
+picklefile = open('treatment_id_to_drugs_dictionary_COMMPASS', 'wb')
+pickle.dump(treatment_id_to_drugs_dictionary_COMMPASS, picklefile)
+picklefile.close()
 
 print("len(COMMPASS_patient_dictionary): ", len(COMMPASS_patient_dictionary))
 # What is the most common treatment? 
@@ -133,27 +135,33 @@ for name, patient in COMMPASS_patient_dictionary.items():
     for treatment in patient.treatment_history:
         count_regions_per_treatment[treatment.id] = count_regions_per_treatment[treatment.id] + 1
 
-print("Done counting stuff")
 def Sort(sub_li):
     return(sorted(sub_li, key = lambda x: x[1]))    
-# Most popular treatments
+# Print most popular treatments
 ## per number of patients
-print("Sort(enumerate(count_patients_per_treatment))", Sort(enumerate(count_patients_per_treatment)))
+print("Sort(enumerate(count_patients_per_treatment))") #, Sort(enumerate(count_patients_per_treatment)))
 counts_patients = np.flip(Sort(enumerate(count_patients_per_treatment)))
 for element in counts_patients[counts_patients[:,0]>100]:
     patient_count = element[0]
     treatment_id = element[1]
-    drug_names = get_drug_names_from_treatment_id(treatment_id)
+    drug_names = get_drug_names_from_treatment_id_COMMPASS(treatment_id, treatment_id_to_drugs_dictionary_COMMPASS)
     print("N =", patient_count, "   id = ", treatment_id, "    drugs:", drug_names)
 
 ## per number of regions
-print("Sort(enumerate(count_regions_per_treatment))", Sort(enumerate(count_regions_per_treatment)))
+print("Sort(enumerate(count_regions_per_treatment))") #, Sort(enumerate(count_regions_per_treatment)))
 counts_regions = np.flip(Sort(enumerate(count_regions_per_treatment)))
 for element in counts_regions[counts_regions[:,0]>100]:
     patient_count = element[0]
     treatment_id = element[1]
-    drug_names = get_drug_names_from_treatment_id(treatment_id)
+    drug_names = get_drug_names_from_treatment_id_COMMPASS(treatment_id, treatment_id_to_drugs_dictionary_COMMPASS)
     print("N =", patient_count, "   id = ", treatment_id, "    drugs:", drug_names)
+
+# Show id of drugs 
+print('Lenalidomide: drug id', drug_dictionary_COMMPASS['Lenalidomide'])
+print('Dexamethasone: drug id', drug_dictionary_COMMPASS['Dexamethasone'])
+print('Bortezomib: drug id', drug_dictionary_COMMPASS['Bortezomib'])
+print('Melphalan: drug id', drug_dictionary_COMMPASS['Melphalan'])
+print('Cyclophosphamide: drug id', drug_dictionary_COMMPASS['Cyclophosphamide'])
 
 count_patients_per_treatment = count_patients_per_treatment #[:100]
 plt.figure()
@@ -176,13 +184,33 @@ plt.xticks()
 plt.savefig("./count_regions_per_treatment.png")
 #plt.show()
 plt.close()
+COMMPASS_patient_dictionary["MMRF_1143"].print()
 
 # Find the treatment id of the required treatment, extract those treatment regions and perform inference there
-#COMMPASS_patient_dictionary["MMRF_1143"].print()
-treatment_id_of_interest = 15 # Dex+Len+Bor #COMMPASS_patient_dictionary["MMRF_1293"].treatment_history[5].id
-###how_many_regions = np.zeros(unique_treat_counter)
-###for treatment_id_of_interest in range(unique_treat_counter):
-#print("Treatment id of interest:", treatment_id_of_interest)
+def estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters, treatment_id_of_interest):
+    # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
+    valid_Mprotein = dummy_Mprotein_values[dummy_measurement_times>=period_start]
+    valid_Kappa = dummy_Kappa_values[dummy_measurement_times>=period_start]
+    valid_Lambda = dummy_Lambda_values[dummy_measurement_times>=period_start]
+    valid_times = dummy_measurement_times[dummy_measurement_times>=period_start]
+    valid_Mprotein = valid_Mprotein[valid_times<=period_end]
+    valid_Kappa = valid_Kappa[valid_times<=period_end]
+    valid_Lambda = valid_Lambda[valid_times<=period_end]
+    valid_times = valid_times[valid_times<=period_end]
+    # Only add as data instance to X and Y if there are enough:
+    if len(valid_times) >= minimum_number_of_measurements and min(valid_Mprotein) > 0:
+        print("Saving a case from", patient.name)
+        number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
+        # Note the time limits of this period
+        training_instance_dict[training_instance_id] = [patient.name, period_start, period_end, treatment_id_of_interest]
+        # Estimate parameters for a dummy patient within this interval
+        dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, Mprotein_values=valid_Mprotein, Kappa_values=valid_Kappa, Lambda_values=valid_Lambda, covariates=[], name="dummy")
+        this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
+        # Add estimates to Y_parameters
+        Y_parameters.append(this_estimate) # training_instance_id is position in Y_parameters
+        patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
+        training_instance_id = training_instance_id + 1
+    return training_instance_id, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters
 
 ## Inference
 # The length of ub and lb implicitly decides whether the effect of treatment is given a parameter or not. 
@@ -199,11 +227,9 @@ ub = np.array([100,    1,  2e-1,  1e-1, 1e-0]) #, 10e4])
 
 # A training instance is a pair of history covariates X and estimated parameters Y
 # Define minimum number of measurements for including period as training instance to X and Y
-minimum_number_of_measurements = 3
-number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = 0
 print("\nFinding right regions and estimating parameters...")
 # Iterate through patients
-# Identify valid periods and estimate parameters there: training_instance_dict = (training_instance_id, [start, end]). Y: (training_instance_id, parameters). 
+# Identify valid periods and estimate parameters there: training_instance_dict = (training_instance_id, start, end, treatment_id). Y: (training_instance_id, parameters). 
 # Find patients with periods that satisfy criteria of enough M protein measurements under chosen treatment 
 # 1) Feature extract history up until period, put in X
 # 2) Estimate parameters in period, put in Y
@@ -211,136 +237,115 @@ training_instance_id = 0
 training_instance_dict = {} # A dictionary mapping training_instance_id to the patient name and the start and end of the interval with the treatment of interest 
 Y_parameters = []
 N_iter = 1000
+minimum_number_of_measurements = 3
 threshold_for_closeness_for_M_protein_at_start = 60
-this_history = np.array([])
 
-def estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters):
-    # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
-    #print(dummy_measurement_times)
-    #print(dummy_Mprotein_values)
-    #print(dummy_Kappa_values)
-    #print(dummy_Lambda_values)
-    valid_Mprotein = dummy_Mprotein_values[dummy_measurement_times>=period_start]
-    valid_Kappa = dummy_Kappa_values[dummy_measurement_times>=period_start]
-    valid_Lambda = dummy_Lambda_values[dummy_measurement_times>=period_start]
-    valid_times = dummy_measurement_times[dummy_measurement_times>=period_start]
-    valid_Mprotein = valid_Mprotein[valid_times<=period_end]
-    valid_Kappa = valid_Kappa[valid_times<=period_end]
-    valid_Lambda = valid_Lambda[valid_times<=period_end]
-    valid_times = valid_times[valid_times<=period_end]
-    # Only add as data instance to X and Y if there are enough:
-    if len(valid_times) >= minimum_number_of_measurements and min(valid_Mprotein) > 0:
-        number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id + 1
-        # Note the time limits of this period
-        training_instance_dict[training_instance_id] = [patient.name, period_start, period_end]
-        # Estimate parameters for a dummy patient within this interval
-        dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, Mprotein_values=valid_Mprotein, Kappa_values=valid_Kappa, Lambda_values=valid_Lambda, covariates=[], name="dummy")
-        this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
-        # Add estimates to Y_parameters
-        Y_parameters.append(this_estimate) # training_instance_id is position in Y_parameters
-        patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
-        training_instance_id = training_instance_id + 1
-    return training_instance_id, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters
+#treatment_id_of_interest = 15 # Dex+Len+Bor #COMMPASS_patient_dictionary["MMRF_1293"].treatment_history[5].id
+how_many_regions = np.zeros(unique_treat_counter)
+for treatment_id_of_interest in [1,2,3,7,10,13,15,16]: # [15,16,3,10,7,1,13,2]: #range(1,unique_treat_counter):
+    number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id = 0
+    print("\nTreatment id of interest:", treatment_id_of_interest)
+    this_history = np.array([])
 
-for name, patient in COMMPASS_patient_dictionary.items():
-    if len(patient.measurement_times) > 0: 
-        # Find periods of interest by looking through patient history 
-        period_start = np.nan
-        period_end = np.nan
-        valid_interval = False
-        dummy_measurement_times = np.array([])
-        dummy_Mprotein_values = np.array([])
-        dummy_Kappa_values = np.array([])
-        dummy_Lambda_values = np.array([])
-        for index, treatment in enumerate(patient.treatment_history):
-            if valid_interval == False: 
-                if treatment.id == treatment_id_of_interest:
-                    # We found the start 
-                    valid_interval = True
-                    period_start = treatment.start
-                    this_history = np.array([treatment])
-                    # Find time M protein value closest in time to the start of the treatment
-                    if index > 0: 
-                        prev_treatment = patient.treatment_history[index-1]
-                        distances_to_treatment_start = abs(patient.measurement_times - np.repeat(treatment.start, len(patient.measurement_times)))
-                        closest_index = np.argmin(distances_to_treatment_start)
-                        if (not patient.measurement_times[closest_index] == treatment.start) and (min(distances_to_treatment_start) <= threshold_for_closeness_for_M_protein_at_start):
-                            # Add that value as M protein value at treatment start
-                            if distances_to_treatment_start[closest_index] > 0:
-                                dummy_measurement_times = np.concatenate((patient.measurement_times[0:closest_index], [treatment.start], patient.measurement_times[closest_index:]))
-                                dummy_Mprotein_values = np.concatenate((patient.Mprotein_values[0:closest_index], [patient.Mprotein_values[closest_index]], patient.Mprotein_values[closest_index:]))
-                                dummy_Kappa_values = np.concatenate((patient.Kappa_values[0:closest_index], [patient.Kappa_values[closest_index]], patient.Kappa_values[closest_index:]))
-                                dummy_Lambda_values = np.concatenate((patient.Lambda_values[0:closest_index], [patient.Lambda_values[closest_index]], patient.Lambda_values[closest_index:]))
-                            else:
-                                dummy_measurement_times = np.concatenate((patient.measurement_times[0:closest_index+1], [treatment.start], patient.measurement_times[closest_index+1:]))
-                                dummy_Mprotein_values = np.concatenate((patient.Mprotein_values[0:closest_index+1], [patient.Mprotein_values[closest_index]], patient.Mprotein_values[closest_index+1:]))
-                                dummy_Kappa_values = np.concatenate((patient.Kappa_values[0:closest_index+1], [patient.Kappa_values[closest_index]], patient.Kappa_values[closest_index+1:]))
-                                dummy_Lambda_values = np.concatenate((patient.Lambda_values[0:closest_index+1], [patient.Lambda_values[closest_index]], patient.Lambda_values[closest_index+1:]))
-                    # Continute to next
-                #elif treatment.id == 0:
-                #    # The last M protein under this treatment might be the start
-                #    # Find time of last M protein value within period
-                #    valid_Mprotein = patient.Mprotein_values[patient.measurement_times>=treatment.start]
-                #    valid_times = patient.measurement_times[patient.measurement_times>=treatment.start]
-                #    valid_Mprotein = valid_Mprotein[valid_times<=treatment.end]
-                #    valid_times = valid_times[valid_times<=treatment.end]
-                #    if len(valid_times) > 0:
-                #        valid_interval = True
-                #        period_start = valid_times[-1]
-                #        zero_treatment = Treatment(period_start, treatment.end, treatment.id)
-                #        this_history = np.array([zero_treatment])
-                #        # Continute to next
-                else:
-                    # Continue looking for the start
-                    pass 
-            else: # if valid interval == True, then we are looking for 0 or the end 
-                if treatment.id == treatment_id_of_interest:
-                    this_history = np.append(this_history,[treatment])
-                    pass
-                elif treatment.id == 0:
-                    # Only after the id of interest. We are extending the period by a drug holiday, then ending the period at the end of this treatment
-                    if patient.name == "MMRF_1793":
-                        treatment = Treatment(treatment.start, 1770, treatment.id)
-                    this_history = np.append(this_history,[treatment])
-                    valid_interval = False
-                    period_end = treatment.end
-                    # Estimate parameters, add to Y and to the patient using the common function
-                    training_instance_id, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters)
-                    dummy_measurement_times = np.array([])
-                    dummy_Mprotein_values = np.array([])
-                    dummy_Kappa_values = np.array([])
-                    dummy_Lambda_values = np.array([])
-                else: 
-                    # We found the end at the beginning of this foreign treatment id
-                    valid_interval = False
-                    # Check if we captured the treatment of interest and not only zero: 
-                    if treatment_id_of_interest in [element.id for element in this_history]:
-                        period_end = treatment.start
+    for name, patient in COMMPASS_patient_dictionary.items():
+        if len(patient.measurement_times) > 0: 
+            # Find periods of interest by looking through patient history 
+            period_start = np.nan
+            period_end = np.nan
+            valid_interval = False
+            dummy_measurement_times = np.array([])
+            dummy_Mprotein_values = np.array([])
+            dummy_Kappa_values = np.array([])
+            dummy_Lambda_values = np.array([])
+            for index, treatment in enumerate(patient.treatment_history):
+                if valid_interval == False: 
+                    if treatment.id == treatment_id_of_interest:
+                        # We found the start 
+                        valid_interval = True
+                        period_start = treatment.start
+                        this_history = np.array([treatment])
+                        # Find time M protein value closest in time to the start of the treatment
+                        if index > 0: 
+                            distances_to_treatment_start = abs(patient.measurement_times - np.repeat(treatment.start, len(patient.measurement_times)))
+                            closest_index = np.argmin(distances_to_treatment_start)
+                            if (not patient.measurement_times[closest_index] == treatment.start) and (min(distances_to_treatment_start) <= threshold_for_closeness_for_M_protein_at_start):
+                                # Add that value as M protein value at treatment start
+                                if distances_to_treatment_start[closest_index] > 0:
+                                    dummy_measurement_times = np.concatenate((patient.measurement_times[0:closest_index], [treatment.start], patient.measurement_times[closest_index:]))
+                                    dummy_Mprotein_values = np.concatenate((patient.Mprotein_values[0:closest_index], [patient.Mprotein_values[closest_index]], patient.Mprotein_values[closest_index:]))
+                                    dummy_Kappa_values = np.concatenate((patient.Kappa_values[0:closest_index], [patient.Kappa_values[closest_index]], patient.Kappa_values[closest_index:]))
+                                    dummy_Lambda_values = np.concatenate((patient.Lambda_values[0:closest_index], [patient.Lambda_values[closest_index]], patient.Lambda_values[closest_index:]))
+                                else:
+                                    dummy_measurement_times = np.concatenate((patient.measurement_times[0:closest_index+1], [treatment.start], patient.measurement_times[closest_index+1:]))
+                                    dummy_Mprotein_values = np.concatenate((patient.Mprotein_values[0:closest_index+1], [patient.Mprotein_values[closest_index]], patient.Mprotein_values[closest_index+1:]))
+                                    dummy_Kappa_values = np.concatenate((patient.Kappa_values[0:closest_index+1], [patient.Kappa_values[closest_index]], patient.Kappa_values[closest_index+1:]))
+                                    dummy_Lambda_values = np.concatenate((patient.Lambda_values[0:closest_index+1], [patient.Lambda_values[closest_index]], patient.Lambda_values[closest_index+1:]))
+                        # Continute to next
+                    #elif treatment.id == 0:
+                    #    # The last M protein under this treatment might be the start
+                    #    # Find time of last M protein value within period
+                    #    valid_Mprotein = patient.Mprotein_values[patient.measurement_times>=treatment.start]
+                    #    valid_times = patient.measurement_times[patient.measurement_times>=treatment.start]
+                    #    valid_Mprotein = valid_Mprotein[valid_times<=treatment.end]
+                    #    valid_times = valid_times[valid_times<=treatment.end]
+                    #    if len(valid_times) > 0:
+                    #        valid_interval = True
+                    #        period_start = valid_times[-1]
+                    #        zero_treatment = Treatment(period_start, treatment.end, treatment.id)
+                    #        this_history = np.array([zero_treatment])
+                    #        # Continute to next
+                    else:
+                        # Continue looking for the start
+                        pass 
+                else: # if valid interval == True, then we are looking for 0 or the end 
+                    if treatment.id == treatment_id_of_interest:
+                        this_history = np.append(this_history,[treatment])
+                        pass
+                    elif treatment.id == 0:
+                        # Only after the id of interest. We are extending the period by a drug holiday, then ending the period at the end of this treatment
+                        if patient.name == "MMRF_1793":
+                            treatment = Treatment(treatment.start, 1770, treatment.id)
+                        this_history = np.append(this_history,[treatment])
+                        valid_interval = False
+                        period_end = treatment.end
                         # Estimate parameters, add to Y and to the patient using the common function
-                        training_instance_id, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters)
+                        training_instance_id, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters, treatment_id_of_interest)
                         dummy_measurement_times = np.array([])
                         dummy_Mprotein_values = np.array([])
                         dummy_Kappa_values = np.array([])
                         dummy_Lambda_values = np.array([])
-        # After the last treatment, if ending on a valid interval, this is the end
-        if valid_interval == True: 
-            # Check if we captured the treatment of interest and not only zero: 
-            if treatment_id_of_interest in [element.id for element in this_history]:
-                period_end = patient.treatment_history[-1].end
-                # Estimate parameters, add to Y and to the patient using the common function
-                training_instance_id, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters)
-        # Plotting estimated parameters
-        for index, param_set in enumerate(patient.parameter_estimates):
-            # Find parameter set and corresponding period
-            estimated_parameters = patient.parameter_estimates[index]
-            plot_patient = patient.dummmy_patients[index]
-            savename = "./COMMPASS_estimate_plots/treatment_id_"+str(treatment_id_of_interest)+"/Treatment_"+str(treatment_id_of_interest)+"_nr"+str(index)+"_"+patient.name+"Y_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sigma="+str(estimated_parameters.sigma)+".png"
-            plot_title = patient.name #+"\nY_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sig=", str(estimated_parameters.sigma)
-            plot_treatment_region_with_estimate(estimated_parameters, plot_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=plot_title, savename=savename)
-            #if patient.name == "MMRF_1489":
-            #    patient.print()
-            #    plot_patient.print()
-            #    efefefef
+                    else: 
+                        # We found the end at the beginning of this foreign treatment id
+                        valid_interval = False
+                        # Check if we captured the treatment of interest and not only zero: 
+                        if treatment_id_of_interest in [element.id for element in this_history]:
+                            period_end = treatment.start
+                            # Estimate parameters, add to Y and to the patient using the common function
+                            training_instance_id, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters, treatment_id_of_interest)
+                            dummy_measurement_times = np.array([])
+                            dummy_Mprotein_values = np.array([])
+                            dummy_Kappa_values = np.array([])
+                            dummy_Lambda_values = np.array([])
+            # After the last treatment, if ending on a valid interval, this is the end
+            if valid_interval == True: 
+                # Check if we captured the treatment of interest and not only zero: 
+                if treatment_id_of_interest in [element.id for element in this_history]:
+                    period_end = patient.treatment_history[-1].end
+                    # Estimate parameters, add to Y and to the patient using the common function
+                    training_instance_id, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id, training_instance_dict, patient, Y_parameters, treatment_id_of_interest)
+            # Plotting estimated parameters for this treatment_id
+            for index, param_set in enumerate(patient.parameter_estimates):
+                # Find parameter set and corresponding period
+                estimated_parameters = patient.parameter_estimates[index]
+                plot_patient = patient.dummmy_patients[index]
+                savename = "./COMMPASS_estimate_plots/treatment_id_"+str(treatment_id_of_interest)+"/Treatment_"+str(treatment_id_of_interest)+"_"+patient.name+"_nr"+str(index)+"Y_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sigma="+str(estimated_parameters.sigma)+".png"
+                plot_title = patient.name #+"\nY_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sig=", str(estimated_parameters.sigma)
+                plot_treatment_region_with_estimate(estimated_parameters, plot_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=plot_title, savename=savename)
+                #if patient.name == "MMRF_1489":
+                #    patient.print()
+                #    plot_patient.print()
+                #    efefefef
+    how_many_regions[treatment_id_of_interest] = number_of_regions_with_at_least_minimum_number_of_measurements_for_this_treatment_id
 
 #COMMPASS_patient_dictionary["MMRF_1293"].print()
 
@@ -356,7 +361,7 @@ np.save("training_instance_dict.npy", training_instance_dict)
 ###for element in counts_regions[counts_regions[:,0]>1]:
 ###    patient_count = element[0]
 ###    treatment_id = element[1]
-###    drug_names = get_drug_names_from_treatment_id(treatment_id)
+###    drug_names = get_drug_names_from_treatment_id_COMMPASS(treatment_id, treatment_id_to_drugs_dictionary_COMMPASS)
 ###    print("N =", patient_count, "   id = ", treatment_id, "    drugs:", drug_names)
 
 # Save (training_instance_id, PUBLIC_ID, [start, end]) to allow df selection out of df_mprotein and df_drugs for feature extraction indexed by training_instance_id
