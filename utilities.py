@@ -8,6 +8,9 @@ from scipy import optimize
 from scipy.optimize import least_squares
 import scipy.stats
 from copy import deepcopy
+import time
+import warnings
+from multiprocessing import Pool
 
 def isNaN(string):
     return string != string
@@ -255,7 +258,7 @@ def generate_sensitive_Mprotein(Y_t, params, delta_T_values, drug_effect):
 def measure_Mprotein_noiseless(params, measurement_times, treatment_history):
     Mprotein_values = np.zeros_like(measurement_times)
     # Adding a small epsilon to Y and pi_r to improve numerical stability
-    epsilon_value = 1e-8
+    epsilon_value = 1e-15
     Y_t = params.Y_0# + epsilon_value
     pi_r_t = params.pi_r# + epsilon_value
     t_params = Parameters(Y_t, pi_r_t, params.g_r, params.g_s, params.k_1, params.sigma)
@@ -577,7 +580,14 @@ def infer_parameters_simulated_patient(patient, lb, ub, N_iterations=10000):
             best_optim = optimization_result
     return best_optim
 
+# https://stackoverflow.com/questions/12874756/parallel-optimizations-in-scipy
+def get_optimization_result(args):
+    x0, patient, all_bounds = args
+    res = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
+    return res
+
 def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
+    global_sigma = 1
     # If the bounds do not include bounds for k_1, we set it to zero before and after optimization
     #bounds_Y_0 = (lb[0], ub[0])
     #bounds_pi_r = (lb[1], ub[1])
@@ -586,18 +596,32 @@ def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
     #bounds_k_1 = (lb[4], ub[4])
     #all_bounds = (bounds_Y_0, bounds_pi_r, bounds_g_r, bounds_g_s) #, bounds_k_1)
     all_bounds = tuple([(lb[ii], ub[ii]) for ii in range(len(ub))])
-    lowest_f_value = np.inf
-    random_samples = np.random.uniform(0,1,len(ub))
-    x0 = lb + np.multiply(random_samples, (ub-lb))
-    best_optim = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
-    for iteration in range(N_iterations):
-        random_samples = np.random.uniform(0,1,len(ub))
-        x0 = lb + np.multiply(random_samples, (ub-lb))
-        optimization_result = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
-        if optimization_result.fun < lowest_f_value:
-            lowest_f_value = optimization_result.fun
-            best_optim = optimization_result
-    best_x = best_optim.x
+    # This block and below keeps the unparallell way
+    #lowest_f_value = np.inf
+    #random_samples = np.random.uniform(0,1,len(ub))
+    #x0 = lb + np.multiply(random_samples, (ub-lb))
+
+    all_random_samples = np.random.uniform(0,1,(N_iterations, len(ub)))
+    x0_array = lb + np.multiply(all_random_samples, (ub-lb))
+
+    args = [(x0_array[i],patient,all_bounds) for i in range(len(x0_array))]
+    with Pool(5) as pool:
+        optim_results = pool.map(get_optimization_result,args)
+    
+    #min_f = min(optim_results, key=lambda x: x.fun)
+    fun_value_list = [elem.fun for elem in optim_results]
+    min_f_index = fun_value_list.index(min(fun_value_list))
+    x_value_list = [elem.x for elem in optim_results]
+    best_x = x_value_list[min_f_index]
+
+    #for iteration in range(N_iterations):
+    #    #random_samples = np.random.uniform(0,1,len(ub))
+    #    #x0 = lb + np.multiply(random_samples, (ub-lb))
+    #    optimization_result = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
+    #    if optimization_result.fun < lowest_f_value:
+    #        lowest_f_value = optimization_result.fun
+    #        best_optim = optimization_result
+    #best_x = best_optim.x
     if len(ub) == 5: # k_1 included in parameters, rdug holiday included in interval
         return Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=global_sigma)
     elif len(ub) == 4: # k_1 included in parameters, rdug holiday included in interval
