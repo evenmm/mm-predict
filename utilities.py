@@ -422,7 +422,7 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='k', label="Estimated M protein (total)")
 
     ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
-    [ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
+    #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
 
     # Plot treatments
     ax2 = ax1.twinx() 
@@ -605,7 +605,7 @@ def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
     x0_array = lb + np.multiply(all_random_samples, (ub-lb))
 
     args = [(x0_array[i],patient,all_bounds) for i in range(len(x0_array))]
-    with Pool(5) as pool:
+    with Pool(15) as pool:
         optim_results = pool.map(get_optimization_result,args)
     
     #min_f = min(optim_results, key=lambda x: x.fun)

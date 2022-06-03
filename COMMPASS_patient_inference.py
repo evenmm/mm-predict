@@ -1,9 +1,7 @@
 # Purposes of this script: 
 #   Load COMMPASS patient data, create treatment_to_id_dictionary_COMMPASS
 #   Find sections with the right drug combination and enough data to perform inference
-#   Perform inference on parameter set
-#   Feature extraction of patient history
-#   Learn mapping from extracted features to parameter set 
+#   Perform inference of parameter set in each region
 from utilities import *
 
 # M protein data
@@ -205,7 +203,7 @@ def get_binary_outcome(period_start, patient, this_estimate):
     # Using predicted Mprotein value to check for increase
     predicted_Mprotein = measure_Mprotein_noiseless(this_estimate, np.array([period_start+days_for_consideration]), future_treatments)
     if predicted_Mprotein[0] > initial_Mprotein_value:
-        return 1
+        return int(1)
     # Return nan if the future history is shorter than the period we consider
     elif max(np.array([elem.end for elem in future_treatments]) < days_for_consideration):
         return np.nan
@@ -297,7 +295,7 @@ how_many_regions = np.zeros(unique_treat_counter)
 for name, patient in COMMPASS_patient_dictionary.items():
     if len(patient.measurement_times) > minimum_number_of_measurements:
         for outer_index, outer_treatment in enumerate(patient.treatment_history): # Outer loop so we pass each of them only once 
-            if outer_treatment.id in [1,2,3,7,10,13,15,16]: # Subset of treatment ids we choose to include. [15,16,3,10,7,1,13,2]: #range(1,unique_treat_counter):
+            if outer_treatment.id in [1,2,3,7,10,13,15,16]: #[38,62,66,110] are other combinations with the same drugs (but 66 only has 6 patients). # 30 for patient 1727 # Subset of treatment ids we choose to include. [15,16,3,10,7,1,13,2]: #range(1,unique_treat_counter):
                 treatment_id_of_interest = outer_treatment.id
 
                 # Find periods of interest by looking through patient history 
@@ -316,22 +314,22 @@ for name, patient in COMMPASS_patient_dictionary.items():
                             valid_interval = True
                             period_start = treatment.start
                             this_history = np.array([treatment])
-                            # Find time M protein value closest in time to the start of the treatment
-                            distances_to_treatment_start = abs(patient.measurement_times - np.repeat(treatment.start, len(patient.measurement_times)))
-                            closest_index = np.argmin(distances_to_treatment_start)
-                            if (not patient.measurement_times[closest_index] == treatment.start) and (min(distances_to_treatment_start) <= threshold_for_closeness_for_M_protein_at_start):
+                            # Find the M protein value closest in time to the start of the treatment
+                            distances_to_treatment_start = patient.measurement_times - np.repeat(treatment.start, len(patient.measurement_times))
+                            abs_distances_to_treatment_start = abs(distances_to_treatment_start)
+                            closest_index = np.argmin(abs_distances_to_treatment_start)
+                            if (not abs_distances_to_treatment_start[closest_index] == 0) and (min(abs_distances_to_treatment_start) <= threshold_for_closeness_for_M_protein_at_start):
                                 # Add that value as M protein value at treatment start if there is nothing there
                                 if distances_to_treatment_start[closest_index] > 0:
                                     dummy_measurement_times = np.concatenate((patient.measurement_times[0:closest_index], [treatment.start], patient.measurement_times[closest_index:]))
                                     dummy_Mprotein_values = np.concatenate((patient.Mprotein_values[0:closest_index], [patient.Mprotein_values[closest_index]], patient.Mprotein_values[closest_index:]))
                                     dummy_Kappa_values = np.concatenate((patient.Kappa_values[0:closest_index], [patient.Kappa_values[closest_index]], patient.Kappa_values[closest_index:]))
                                     dummy_Lambda_values = np.concatenate((patient.Lambda_values[0:closest_index], [patient.Lambda_values[closest_index]], patient.Lambda_values[closest_index:]))
-                                else:
+                                else: # indexing is ok, even in empty space
                                     dummy_measurement_times = np.concatenate((patient.measurement_times[0:closest_index+1], [treatment.start], patient.measurement_times[closest_index+1:]))
                                     dummy_Mprotein_values = np.concatenate((patient.Mprotein_values[0:closest_index+1], [patient.Mprotein_values[closest_index]], patient.Mprotein_values[closest_index+1:]))
                                     dummy_Kappa_values = np.concatenate((patient.Kappa_values[0:closest_index+1], [patient.Kappa_values[closest_index]], patient.Kappa_values[closest_index+1:]))
                                     dummy_Lambda_values = np.concatenate((patient.Lambda_values[0:closest_index+1], [patient.Lambda_values[closest_index]], patient.Lambda_values[closest_index+1:]))
-                            # Continute to next
                         #elif treatment.id == 0:
                         #    # The last M protein under this treatment might be the start
                         #    # Find time of last M protein value within period
@@ -388,11 +386,11 @@ for name, patient in COMMPASS_patient_dictionary.items():
 end_time = time.time()
 time_duration = end_time - start_time
 print("Time elapsed:", time_duration)
-print("len(Y_increase_or_not):", len(Y_increase_or_not))
-print("Y_increase_or_not == 1:", sum(Y_increase_or_not[Y_increase_or_not == 1]))
-print("Y_increase_or_not == 0:", len(Y_increase_or_not) - np.count_nonzero(Y_increase_or_not))
-print("Y_increase_or_not == np.nan:", sum(np.isnan(Y_increase_or_not)))
-print("Y_increase_or_not something else:", sum([(elem not in [0,1]) for elem in Y_increase_or_not]) - sum(np.isnan(Y_increase_or_not)))
+print("Number of intervals:", len(Y_increase_or_not))
+print("Number of 0s:", len(Y_increase_or_not) - np.count_nonzero(Y_increase_or_not))
+print("Number of 1s:", sum(Y_increase_or_not[Y_increase_or_not == 1]))
+print("Number of nans:", sum(np.isnan(Y_increase_or_not)))
+print("Number of other things:", sum([(elem not in [0,1]) for elem in Y_increase_or_not]) - sum(np.isnan(Y_increase_or_not)))
 #COMMPASS_patient_dictionary["MMRF_1293"].print()
 
 #print("Treatment id of interest:", treatment_id_of_interest)
