@@ -31,17 +31,17 @@ rs = RandomState(MT19937(SeedSequence(123456789)))
 # 22.03.22 treatment in terms of different drugs
 
 # In drug dictionary, key is drug name and value is drug id
-drug_dictionary_OSLO = np.load("drug_dictionary_OSLO.npy", allow_pickle=True).item()
-drug_dictionary_COMMPASS = np.load("drug_dictionary_COMMPASS.npy", allow_pickle=True).item()
+drug_dictionary_OSLO = np.load("./binaries_and_pickles/drug_dictionary_OSLO.npy", allow_pickle=True).item()
+drug_dictionary_COMMPASS = np.load("./binaries_and_pickles/drug_dictionary_COMMPASS.npy", allow_pickle=True).item()
 for key, value in drug_dictionary_COMMPASS.items():
     if key not in drug_dictionary_OSLO.keys():
         drug_dictionary_OSLO[key] = (max(drug_dictionary_OSLO.values())+1)
 # Join the two drug dictionaries to get a complete drug dictionary 
 drug_dictionary = drug_dictionary_OSLO
-np.save("drug_dictionary.npy", drug_dictionary)
+np.save("./binaries_and_pickles/drug_dictionary.npy", drug_dictionary)
 drug_id_to_name_dictionary = {v: k for k, v in drug_dictionary.items()}
-treatment_to_id_dictionary = np.load("treatment_to_id_dictionary_OSLO.npy", allow_pickle=True).item()
-#treatment_to_id_dictionary = np.load("treatment_to_id_dictionary_COMMPASS.npy", allow_pickle=True).item()
+treatment_to_id_dictionary = np.load("./binaries_and_pickles/treatment_to_id_dictionary_OSLO.npy", allow_pickle=True).item()
+#treatment_to_id_dictionary = np.load("./binaries_and_pickles/treatment_to_id_dictionary_COMMPASS.npy", allow_pickle=True).item()
 treatment_id_to_drugs_dictionary = {v: k for k, v in treatment_to_id_dictionary.items()}
 
 def get_drug_names_from_treatment_id_COMMPASS(treatment_id, treatment_id_to_drugs_dictionary_COMMPASS):
@@ -229,6 +229,7 @@ def compute_filter_values(this_filter, patient, end_of_history, value_type="Mpro
         type_values = patient.Kappa_values[correct_times]
     elif value_type == "Lambda":
         type_values = patient.Lambda_values[correct_times]
+    # Automatically handling empty lists since sum([]) = 0.
     if this_filter.filter_type == "flat":
         filter_values = [sum(type_values)]
     elif this_filter.filter_type == "gauss":

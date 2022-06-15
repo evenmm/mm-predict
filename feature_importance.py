@@ -9,21 +9,24 @@ import sklearn.metrics as metrics
 pd.options.display.width = 150
 pd.options.display.max_colwidth = 150
 
-picklefile = open('random_forest_model', 'rb')
+picklefile = open('./binaries_and_pickles/random_forest_model', 'rb')
 random_forest_model = pickle.load(picklefile)
 picklefile.close()
 
-picklefile = open('df_X_covariates', 'rb')
+picklefile = open('./binaries_and_pickles/df_X_covariates', 'rb')
 df_X_covariates = pickle.load(picklefile)
 picklefile.close()
 
-picklefile = open('X_test', 'rb')
-X_test = pickle.load(picklefile)
+Leading X and y from binary_outcome inference
+# picklefile = open('./binaries_and_pickles/X_test_array_binary_outcome', 'rb')
+X_test_array = pickle.load(picklefile)
 picklefile.close()
+X_test = X_test_array[-1]
 
-picklefile = open('y_test', 'rb')
-y_test = pickle.load(picklefile)
+picklefile = open('./binaries_and_pickles/y_test_array_binary_outcome', 'rb')
+y_test_array = pickle.load(picklefile)
 picklefile.close()
+y_test = y_test_array[-1]
 
 print("Investigating feature importance based on mean decrease in impurity")
 #feature_names = [f"feature {i}" for i in range(df_X_covariates.shape[1])]
@@ -40,7 +43,7 @@ print(f"Elapsed time to compute the importances: {elapsed_time:.3f} seconds")
 forest_importances = pd.Series(importances, index=feature_names)
 forest_importances = pd.DataFrame(forest_importances)
 forest_importances = forest_importances.rename({0: 'importances'}, axis=1)  # new method
-print(forest_importances.head(n=5))
+#print(forest_importances.head(n=5))
 forest_importances = forest_importances.sort_values(by=['importances'], ascending=False)
 print(forest_importances.head(n=30))
 
@@ -50,8 +53,8 @@ forest_importances[0:n_features_to_plot].plot.bar(yerr=std[0:n_features_to_plot]
 ax.set_title("Feature importances using mean decrease in impurity")
 ax.set_ylabel("Mean decrease in impurity")
 fig.tight_layout()
-plt.savefig("./feature_importance.png")
-#plt.show()
+plt.savefig("./plots/feature_importance.png")
+plt.show()
 
 """
 #Feature importance based on feature permutation

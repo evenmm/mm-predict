@@ -113,7 +113,7 @@ for patient_name, patient_object in COMMPASS_patient_dictionary.items():
         # At the end of the loop all drugs are turned off
 treatment_id_to_drugs_dictionary_COMMPASS = {v: k for k, v in treatment_to_id_dictionary_COMMPASS.items()}
 # Save it here
-picklefile = open('treatment_id_to_drugs_dictionary_COMMPASS', 'wb')
+picklefile = open('./binaries_and_pickles/treatment_id_to_drugs_dictionary_COMMPASS', 'wb')
 pickle.dump(treatment_id_to_drugs_dictionary_COMMPASS, picklefile)
 picklefile.close()
 
@@ -168,7 +168,7 @@ plt.title("Number of patients that got each treatment")
 plt.xlabel("Treatment") #, labelpad=14)
 plt.ylabel("Number of patients") #, labelpad=14)
 plt.xticks()
-plt.savefig("./count_patients_per_treatment.png")
+plt.savefig("./plots/count_patients_per_treatment.png")
 #plt.show()
 plt.close()
 
@@ -179,7 +179,7 @@ plt.title("Number of regions for each treatment")
 plt.xlabel("Treatment") #, labelpad=14)
 plt.ylabel("Number of patients") #, labelpad=14)
 plt.xticks()
-plt.savefig("./count_regions_per_treatment.png")
+plt.savefig("./plots/count_regions_per_treatment.png")
 #plt.show()
 plt.close()
 COMMPASS_patient_dictionary["MMRF_1143"].print()
@@ -421,17 +421,17 @@ df_drugs_and_dates.to_pickle("df_drugs_and_dates.pkl")
 #plot_treatment_region_with_estimate(parameters_patient_2, patient_2, estimated_parameters=estimated_parameters_patient_2, PLOT_ESTIMATES=True, plot_title="Patient 2")
 
 #create a pickle file
-picklefile = open('Y_parameters', 'wb')
+picklefile = open('./binaries_and_pickles/Y_parameters', 'wb')
 #pickle the dictionary and write it to file
 pickle.dump(np.array(Y_parameters), picklefile)
 #close the file
 picklefile.close()
 
-picklefile = open('Y_increase_or_not', 'wb')
+picklefile = open('./binaries_and_pickles/Y_increase_or_not', 'wb')
 pickle.dump(Y_increase_or_not, picklefile)
 picklefile.close()
 
-picklefile = open('COMMPASS_patient_dictionary', 'wb')
+picklefile = open('./binaries_and_pickles/COMMPASS_patient_dictionary', 'wb')
 pickle.dump(COMMPASS_patient_dictionary, picklefile)
 picklefile.close()
 
