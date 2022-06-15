@@ -62,6 +62,11 @@ for training_instance_id, value in training_instance_dict.items():
     single_entry = df_mprotein_and_dates[(df_mprotein_and_dates["PUBLIC_ID"] == patient_name) & (df_mprotein_and_dates["VISITDY"] < end_of_history)]
     single_entry["training_instance_id"] = training_instance_id
     df_Mprotein_pre_tsfresh = pd.concat([df_Mprotein_pre_tsfresh, single_entry])
+
+    # Add one zero observation 10 years before diagnosis if the id is missing from the M protein df
+    if training_instance_id not in pd.unique(df_Mprotein_pre_tsfresh[['training_instance_id']].values.ravel('K')):
+        dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'D_LAB_serum_m_protein':[0], 'D_LAB_serum_kappa':[0], 'D_LAB_serum_lambda':[0], 'VISITDY':[-3650]})
+        df_Mprotein_pre_tsfresh = pd.concat([df_Mprotein_pre_tsfresh, dummy], ignore_index=True)
 #print(df_Mprotein_pre_tsfresh.head(n=20))
 
 # Drugs
@@ -78,15 +83,17 @@ for training_instance_id, value in training_instance_dict.items():
     single_entry["training_instance_id"] = training_instance_id
     df_drugs_pre_tsfresh = pd.concat([df_drugs_pre_tsfresh, single_entry])
     
-    # Add zero row if the id is missing from the drug df
+    # Add zero row if the id is missing from the drug df. This should have no effect at all since it has zero duration
     if training_instance_id not in pd.unique(df_drugs_pre_tsfresh[['training_instance_id']].values.ravel('K')):
-        dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'drug_id':[0],'startday':[0], 'stopday':[0]})
+        dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'drug_id':[0], 'startday':[end_of_history-3650], 'stopday':[end_of_history-3650]})
         df_drugs_pre_tsfresh = pd.concat([df_drugs_pre_tsfresh, dummy], ignore_index=True)
 #print(df_drugs_pre_tsfresh.head(n=20))
 
 # Feature extraction requires only numerical values in columns
 from tsfresh import extract_features
 df_Mprotein_pre_tsfresh = df_Mprotein_pre_tsfresh[["D_LAB_serum_m_protein", 'D_LAB_serum_kappa', 'D_LAB_serum_lambda', "VISITDY", "training_instance_id"]] # Remove PUBLIC_ID
+#values = {"D_LAB_serum_m_protein":0, 'D_LAB_serum_kappa':0, 'D_LAB_serum_lambda':0} #"VISITDY":0, "training_instance_id":0
+#df_Mprotein_pre_tsfresh = df_Mprotein_pre_tsfresh.fillna(value=values)
 extracted_features_M_protein = extract_features(df_Mprotein_pre_tsfresh, column_id="training_instance_id", column_sort="VISITDY")
 
 df_drugs_pre_tsfresh = df_drugs_pre_tsfresh[['drug_id','startday', 'stopday', "training_instance_id"]] # Remove PUBLIC_ID
@@ -100,12 +107,13 @@ impute(extracted_features_drugs)
 
 # Merge drug and M protein data 
 extracted_features_tsfresh = extracted_features_drugs.join(extracted_features_M_protein) #, how="outer")
+#print(extracted_features.head(n=5))
 
 ######################################################################
 # Add filter covariates 
 ######################################################################
 print("Adding filter covariates")
-df_X_covariates = pd.DataFrame({"training_instance_id": training_instance_id_list})
+df_filter_covariates = pd.DataFrame({"training_instance_id": training_instance_id_list})
 # Filter bank of (bandwidth, lag), in months: (1, 0), (3, 0), (6, 0), (12, 0), (12, 12), (12, 24). As in https://bmcbioinformatics.biomedcentral.com/articles/10.1186/s12859-014-0425-8
 flat_filter_1 = Filter("flat", 30, 0)
 flat_filter_2 = Filter("flat", 91, 0)
@@ -124,15 +132,15 @@ gauss_filter_6 = Filter("gauss", 365, 2*365)
 gauss_filter_bank = [gauss_filter_1, gauss_filter_2, gauss_filter_3, gauss_filter_4, gauss_filter_5, gauss_filter_6]
 full_filter_bank = flat_filter_bank + gauss_filter_bank
 
-def add_filter_values(value_type, full_filter_bank, patient, end_of_history, df_X_covariates, training_instance_id):
+def add_filter_values(value_type, full_filter_bank, patient, end_of_history, df_filter_covariates, training_instance_id):
     filter_values = [compute_filter_values(this_filter, patient, end_of_history, value_type=value_type) for this_filter in full_filter_bank]
     # Flatten the array to get a list of features for all drugs, all covariates
     filter_values = np.ndarray.flatten(np.array(filter_values))
     column_names = [value_type+"F"+str(int(iii)) for iii in range(len(filter_values))]
-    df_X_covariates.loc[training_instance_id,column_names] = filter_values
-    return df_X_covariates
+    df_filter_covariates.loc[training_instance_id,column_names] = filter_values
+    return df_filter_covariates
 
-# Loop over training cases and add row values to df_X_covariates
+# Loop over training cases and add row values to df_filter_covariates
 for training_instance_id, value in training_instance_dict.items():
     patient_name = value[0]
     patient = COMMPASS_patient_dictionary[patient_name]
@@ -147,17 +155,14 @@ for training_instance_id, value in training_instance_dict.items():
     drug_filter_values = np.ndarray.flatten(np.array(drug_filter_values))
     #print(drug_filter_values[drug_filter_values != 0])
     column_names = ["DF"+str(int(iii)) for iii in range(len(drug_filter_values))]
-    df_X_covariates.loc[training_instance_id,column_names] = drug_filter_values
+    df_filter_covariates.loc[training_instance_id,column_names] = drug_filter_values
 
     # M protein
-    add_filter_values("Mprotein", full_filter_bank, patient, end_of_history, df_X_covariates, training_instance_id)
+    add_filter_values("Mprotein", full_filter_bank, patient, end_of_history, df_filter_covariates, training_instance_id)
     # Kappa 
-    add_filter_values("Kappa", full_filter_bank, patient, end_of_history, df_X_covariates, training_instance_id)
+    add_filter_values("Kappa", full_filter_bank, patient, end_of_history, df_filter_covariates, training_instance_id)
     # Lambda
-    add_filter_values("Lambda", full_filter_bank, patient, end_of_history, df_X_covariates, training_instance_id)
-
-df_X_covariates = extracted_features_tsfresh.join(df_X_covariates)
-#print(extracted_features.head(n=5))
+    add_filter_values("Lambda", full_filter_bank, patient, end_of_history, df_filter_covariates, training_instance_id)
 
 ######################################################################
 # Add clinical covariates and treatment as covariate
@@ -195,7 +200,28 @@ df_clinical_covariates = df_clinical_covariates[['ecog', 'DEMOG_PATIENTAGE', 'DE
 values = {'ecog':0, 'DEMOG_PATIENTAGE':0, 'DEMOG_HEIGHT':0, 'DEMOG_WEIGHT':0, 'D_PT_race':1.1, 'D_PT_ethnic':1.1, 'D_PT_gender':1.5}
 df_clinical_covariates = df_clinical_covariates.fillna(value=values)
 
+dummy_df = pd.DataFrame(columns=["training_instance_id", 'PUBLIC_ID', 'ecog', 'DEMOG_PATIENTAGE', 'DEMOG_HEIGHT', 'DEMOG_WEIGHT', 'D_PT_race', 'D_PT_ethnic', 'D_PT_gender', '01Len', '01Dex', '01Bor', '01Melph', '01Cyclo'])
+for training_instance_id, value in training_instance_dict.items():
+    patient_name = value[0]
+    patient = COMMPASS_patient_dictionary[patient_name]
+    
+    single_entry = df_IA17[df_IA17["PUBLIC_ID"] == patient_name]
+    single_entry["training_instance_id"] = training_instance_id
+
+    single_entry['01Len'] = int(np.random.randint(1))
+    dummy_df = pd.concat([dummy_df, single_entry])
+# Sort by training_instance_id, drop that and PUBLIC_ID. Fillna values
+dummy_df = dummy_df.sort_values(by=['training_instance_id'])
+dummy_df.reset_index(drop=True, inplace=True)
+dummy_df = dummy_df[['01Len']]
+
+# Three different types of covariates:
+# extracted_features_tsfresh
+# df_filter_covariates
+# df_clinical_covariates
+df_X_covariates = extracted_features_tsfresh.join(df_filter_covariates)
 df_X_covariates = df_X_covariates.join(df_clinical_covariates)
+#df_X_covariates = df_X_covariates[["DEMOG_PATIENTAGE"]]
 print(df_X_covariates.head(n=5))
 
 ######################################################################
@@ -217,7 +243,7 @@ def train_random_forest(args):
     df_X_covariates, Y_outcome, i = args
 
     random_forest_model = RandomForestClassifier(n_estimators=1000, random_state=randomnumberr)
-    X_train, X_test, y_train, y_test = train_test_split(df_X_covariates, Y_outcome, test_size=.4, random_state=randomnumberr + i)
+    X_train, X_test, y_train, y_test = train_test_split(df_X_covariates, Y_outcome, test_size=.4, stratify=Y_outcome, random_state=randomnumberr + i)
     random_forest_model.fit(X_train, y_train)
     y_pred = random_forest_model.predict(X_test)
     y_pred_train = random_forest_model.predict(X_train)
@@ -295,6 +321,22 @@ plt.grid(visible=True)
 plt.ylabel('True Positive Rate')
 plt.xlabel('False Positive Rate')
 plt.savefig("./ROC_test_data.png")
-plt.show()
+#plt.show()
 
 print(classification_report(y_test, y_pred))
+
+picklefile = open('random_forest_model', 'wb')
+pickle.dump(random_forest_model, picklefile)
+picklefile.close()
+
+picklefile = open('df_X_covariates', 'wb')
+pickle.dump(df_X_covariates, picklefile)
+picklefile.close()
+
+picklefile = open('X_test', 'wb')
+pickle.dump(X_test, picklefile)
+picklefile.close()
+
+picklefile = open('y_test', 'wb')
+pickle.dump(y_test, picklefile)
+picklefile.close()
