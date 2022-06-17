@@ -17,6 +17,8 @@ def isNaN(string):
 def Sort(sub_li):
     return(sorted(sub_li, key = lambda x: x[1]))
 
+s = 25 # scatter plot object size
+
 np.random.seed(42)
 from numpy.random import MT19937
 from numpy.random import RandomState, SeedSequence
@@ -91,12 +93,12 @@ class Cell_population:
 
 class Parameters: 
     def __init__(self, Y_0, pi_r, g_r, g_s, k_1, sigma):
-        self.Y_0 = Y_0
-        self.pi_r = pi_r
-        self.g_r = g_r
-        self.g_s = g_s
-        self.k_1 = k_1
-        self.sigma = sigma
+        self.Y_0 = Y_0 # M protein value at start of treatment
+        self.pi_r = pi_r # Fraction of resistant cells at start of treatment 
+        self.g_r = g_r # Growth rate of resistant cells
+        self.g_s = g_s # Growth rate of sensitive cells in absence of treatment
+        self.k_1 = k_1 # Additive effect of treatment on growth rate of sensitive cells
+        self.sigma = sigma # Standard deviation of measurement noise
     def to_array_without_sigma(self):
         return np.array([self.Y_0, self.pi_r, self.g_r, self.g_s, self.k_1])
     def to_array_with_sigma(self):
@@ -121,11 +123,12 @@ class Drug_period:
         self.id = id
 
 class Patient: 
-    def __init__(self, parameters, measurement_times, treatment_history, covariates = []):
+    def __init__(self, parameters, measurement_times, treatment_history, covariates = [], name = "nn"):
         self.measurement_times = measurement_times
         self.treatment_history = treatment_history
         self.Mprotein_values = measure_Mprotein_with_noise(parameters, self.measurement_times, self.treatment_history)
         self.covariates = covariates
+        self.name = name
     def get_measurement_times(self):
         return self.measurement_times
     def get_treatment_history(self):
@@ -385,7 +388,7 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
     #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
     ax1.set_zorder(ax1.get_zorder()+3)
     ax1.legend()
-    ax2.legend()
+    #ax2.legend() # For drugs, no handles with labels found to put in legend.
     fig.tight_layout()
     if savename != 0:
         plt.savefig(savename)
@@ -539,7 +542,7 @@ def plot_to_compare_estimated_and_predicted_drug_dynamics(true_parameters, predi
 #####################################
 # Inference
 #####################################
-global_sigma = 0.1  #Measurement noise
+global_sigma = 0.1  # Standard deviation of measurement noise
 
 def least_squares_objective_function_patient_1(array_x, measurement_times, treatment_history, observations):
     Parameter_object_x = Parameters(Y_0=array_x[0], pi_r=array_x[1], g_r=array_x[2], g_s=array_x[3], k_1=0.000, sigma=global_sigma)
@@ -627,3 +630,42 @@ def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
         return Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=global_sigma)
     elif len(ub) == 4: # k_1 included in parameters, rdug holiday included in interval
         return Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=0, sigma=global_sigma)
+
+def get_binary_outcome(period_start, patient, this_estimate):
+    # NB! To predict chances under received treatment, we must encode future treatment precisely in covariates to predict effect of future treatment.  This means encode treatment+drug holiday in X.
+    # What we do now is to predict outcome under continuous administration of treatment, for the time interval where we predict response.  
+
+    # Using estimated Y_0 as M protein value at treatment start
+    initial_Mprotein_value = this_estimate.Y_0
+    
+    # If projected/observed M protein value goes above M protein value at treatment start within X days, then outcome = 1
+    days_for_consideration = 182 # Window from treatment start within which we check for increase
+
+    future_starts = np.array([elem.start for elem in patient.treatment_history])
+    #future_treatments = patient.treatment_history[future_starts >= period_start]
+    #future_treatments = np.array([Treatment(elem.start - period_start, elem.end - period_start, elem.id) for elem in future_treatments])
+    first_future_treatment = patient.treatment_history[future_starts >= period_start][0]
+    future_treatments = np.array([Treatment(period_start, period_start + days_for_consideration, first_future_treatment.id)])
+
+    # Using predicted Mprotein value to check for increase
+    predicted_Mprotein = measure_Mprotein_noiseless(this_estimate, np.array([period_start+days_for_consideration]), future_treatments)
+    if predicted_Mprotein[0] > initial_Mprotein_value:
+        return int(1)
+    # Return nan if the future history is shorter than the period we consider
+    elif max(np.array([elem.end for elem in future_treatments]) < days_for_consideration):
+        return np.nan
+    else: # If we did not observe relapse and the observed period is long enough, report 0
+        return 0
+    ## Using observed values to check for increase
+    #future_times = patient.measurement_times[patient.measurement_times > period_start]
+    #future_Mprotein = patient.Mprotein_values[patient.measurement_times > period_start]
+    #relevant_times = future_times[future_times <= (period_start+days_for_consideration)]
+    #relevant_Mprotein = future_Mprotein[future_times <= (period_start+days_for_consideration)]
+    #
+    #if len(relevant_Mprotein[relevant_Mprotein > initial_Mprotein_value]) > 0:
+    #    binary_outcome = 1
+    #elif len(relevant_Mprotein[relevant_Mprotein <= initial_Mprotein_value]) > 0:
+    #    binary_outcome = 0
+    #else: # if the list has no length, i.e. we have no measurements of it
+    #    binary_outcome = np.nan
+    #return binary_outcome

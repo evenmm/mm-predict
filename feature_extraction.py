@@ -87,6 +87,7 @@ impute(extracted_features_drugs)
 
 # Merge drug and M protein data 
 extracted_features_tsfresh = extracted_features_drugs.join(extracted_features_M_protein) #, how="outer")
+print("Number of tsfresh covariates:", len(extracted_features_tsfresh.columns))
 #print(extracted_features.head(n=5))
 
 ######################################################################
@@ -144,6 +145,9 @@ for training_instance_id, value in training_instance_dict.items():
     # Lambda
     add_filter_values("Lambda", full_filter_bank, patient, end_of_history, df_filter_covariates, training_instance_id)
 
+df_filter_covariates.drop("training_instance_id", axis=1, inplace=True)
+print("Number of filter covariates:", len(df_filter_covariates.columns))
+
 ######################################################################
 # Add clinical covariates and treatment as covariate
 ######################################################################
@@ -179,7 +183,11 @@ df_clinical_covariates.reset_index(drop=True, inplace=True)
 df_clinical_covariates = df_clinical_covariates[['ecog', 'DEMOG_PATIENTAGE', 'DEMOG_HEIGHT', 'DEMOG_WEIGHT', 'D_PT_race', 'D_PT_ethnic', 'D_PT_gender', '01Len', '01Dex', '01Bor', '01Melph', '01Cyclo']]
 values = {'ecog':0, 'DEMOG_PATIENTAGE':0, 'DEMOG_HEIGHT':0, 'DEMOG_WEIGHT':0, 'D_PT_race':1.1, 'D_PT_ethnic':1.1, 'D_PT_gender':1.5}
 df_clinical_covariates = df_clinical_covariates.fillna(value=values)
+print("Number of clinical covariates including drug indicators:", len(df_clinical_covariates.columns))
 
+######################################################################
+# Save things
+######################################################################
 dummy_df = pd.DataFrame(columns=["training_instance_id", 'PUBLIC_ID', 'ecog', 'DEMOG_PATIENTAGE', 'DEMOG_HEIGHT', 'DEMOG_WEIGHT', 'D_PT_race', 'D_PT_ethnic', 'D_PT_gender', '01Len', '01Dex', '01Bor', '01Melph', '01Cyclo'])
 for training_instance_id, value in training_instance_dict.items():
     patient_name = value[0]
@@ -203,6 +211,7 @@ df_X_covariates = extracted_features_tsfresh.join(df_filter_covariates)
 df_X_covariates = df_X_covariates.join(df_clinical_covariates)
 #df_X_covariates = df_X_covariates[["DEMOG_PATIENTAGE"]]
 #df_X_covariates = df_clinical_covariates
+print("Total number of covariates in df_X:", len(df_X_covariates.columns))
 print(df_X_covariates.head(n=5))
 
 # Save dataframe X with covairates

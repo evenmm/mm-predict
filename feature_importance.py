@@ -17,8 +17,8 @@ picklefile = open('./binaries_and_pickles/df_X_covariates', 'rb')
 df_X_covariates = pickle.load(picklefile)
 picklefile.close()
 
-Leading X and y from binary_outcome inference
-# picklefile = open('./binaries_and_pickles/X_test_array_binary_outcome', 'rb')
+#Leading X and y from binary_outcome inference
+picklefile = open('./binaries_and_pickles/X_test_array_binary_outcome', 'rb')
 X_test_array = pickle.load(picklefile)
 picklefile.close()
 X_test = X_test_array[-1]
