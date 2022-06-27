@@ -11,6 +11,8 @@ from copy import deepcopy
 import time
 import warnings
 from multiprocessing import Pool
+from drug_colors import *
+import seaborn as sns
 
 def isNaN(string):
     return string != string
@@ -631,16 +633,14 @@ def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
     elif len(ub) == 4: # k_1 included in parameters, rdug holiday included in interval
         return Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=0, sigma=global_sigma)
 
-def get_binary_outcome(period_start, patient, this_estimate):
+def get_binary_outcome(period_start, patient, this_estimate, days_for_consideration=182):
+    # If projected/observed M protein value goes above M protein value at treatment start within X days, then outcome = 1
     # NB! To predict chances under received treatment, we must encode future treatment precisely in covariates to predict effect of future treatment.  This means encode treatment+drug holiday in X.
     # What we do now is to predict outcome under continuous administration of treatment, for the time interval where we predict response.  
 
     # Using estimated Y_0 as M protein value at treatment start
     initial_Mprotein_value = this_estimate.Y_0
     
-    # If projected/observed M protein value goes above M protein value at treatment start within X days, then outcome = 1
-    days_for_consideration = 182 # Window from treatment start within which we check for increase
-
     future_starts = np.array([elem.start for elem in patient.treatment_history])
     #future_treatments = patient.treatment_history[future_starts >= period_start]
     #future_treatments = np.array([Treatment(elem.start - period_start, elem.end - period_start, elem.id) for elem in future_treatments])

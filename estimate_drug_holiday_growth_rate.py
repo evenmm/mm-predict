@@ -34,42 +34,6 @@ picklefile = open('./binaries_and_pickles/unique_treat_counter', 'rb')
 unique_treat_counter = pickle.load(picklefile)
 picklefile.close()
 
-# Find the treatment id of the required treatment, extract those treatment regions and perform inference there
-def estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, how_many_regions, all_drug_holiday_measurements, patient, log_growth_rates, treatment_id_of_interest, Y_increase_or_not):
-    # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
-    valid_Mprotein = dummy_Mprotein_values[dummy_measurement_times>=period_start]
-    valid_Kappa = dummy_Kappa_values[dummy_measurement_times>=period_start]
-    valid_Lambda = dummy_Lambda_values[dummy_measurement_times>=period_start]
-    valid_times = dummy_measurement_times[dummy_measurement_times>=period_start]
-    valid_Mprotein = valid_Mprotein[valid_times<=period_end]
-    valid_Kappa = valid_Kappa[valid_times<=period_end]
-    valid_Lambda = valid_Lambda[valid_times<=period_end]
-    valid_times = valid_times[valid_times<=period_end]
-    # Only add as data instance to X and Y if there are enough:
-    if len(valid_times) >= minimum_number_of_measurements and min(valid_Mprotein) > 0:
-        print("Saving a case from", patient.name, "- treatment id", treatment_id_of_interest)
-        how_many_regions[treatment_id_of_interest] = how_many_regions[treatment_id_of_interest] + 1
-        # Note the time limits of this period
-        all_drug_holiday_measurements[training_instance_id] = [patient.name, period_start, period_end, treatment_id_of_interest]
-        # Estimate parameters for a dummy patient within this interval
-        dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, Mprotein_values=valid_Mprotein, Kappa_values=valid_Kappa, Lambda_values=valid_Lambda, covariates=[], name="dummy")
-        this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
-        # Add estimates to log_growth_rates
-        log_growth_rates.append(this_estimate) # training_instance_id is position in log_growth_rates
-        binary_outcome = get_binary_outcome(period_start, patient, this_estimate)
-        Y_increase_or_not = np.concatenate((Y_increase_or_not, np.array([binary_outcome])))
-        patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
-        training_instance_id = training_instance_id + 1
-
-        # Plotting treatment region with estimate
-        #for index, param_set in enumerate(patient.parameter_estimates):
-        estimated_parameters = this_estimate # patient.parameter_estimates[index]
-        plot_patient = dummmy_patient # patient.dummmy_patients[index]
-        savename = "./COMMPASS_estimate_plots/treatment_id_"+str(treatment_id_of_interest)+"/Treatment_"+str(treatment_id_of_interest)+"_"+patient.name+"_at_time"+str(period_start)+"Y_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sigma="+str(estimated_parameters.sigma)+".png"
-        plot_title = patient.name
-        plot_treatment_region_with_estimate(estimated_parameters, plot_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=plot_title, savename=savename)
-    return training_instance_id, how_many_regions, all_drug_holiday_measurements, patient, log_growth_rates, Y_increase_or_not
-
 # A training instance is a pair of history covariates X and estimated parameters Y
 # Define minimum number of measurements for including period as training instance to X and Y
 print("\nFinding right regions and estimating parameters...")
@@ -81,14 +45,18 @@ print("\nFinding right regions and estimating parameters...")
 training_instance_id = 0
 all_drug_holiday_measurements = {} # A dictionary mapping training_instance_id to the patient name and the start and end of the interval with the treatment of interest 
 log_growth_rates = []
+patient_id_array = []
+holiday_number_array = []
 
 # Iterate over all patients, look at their treatment periods one by one and find drug holidays
 start_time = time.time()
 how_many_regions = np.zeros(unique_treat_counter)
 for name, patient in COMMPASS_patient_dictionary.items():
+    holiday_counter = 0
     if len(patient.measurement_times) > minimum_number_of_measurements:
         for index, treatment in enumerate(patient.treatment_history): # Outer loop so we pass each of them only once 
             if treatment.id == 0: # drug holidays
+                holiday_counter = holiday_counter + 1
                 treatment_id_of_interest = treatment.id
 
                 # We found a drug holiday
@@ -132,11 +100,59 @@ for name, patient in COMMPASS_patient_dictionary.items():
                         valid_Mprotein = valid_Mprotein + 1e-15
                         log_valid_Mprotein = np.log(valid_Mprotein)
                         model.fit(valid_times, log_valid_Mprotein)
-                        growth_rate = model.coef_
-                        log_growth_rates = np.concatenate((log_growth_rates, growth_rate)) # training_instance_id is position in log_growth_rates
+                        growth_rate = model.coef_[0]
+                        log_growth_rates.append(growth_rate) # training_instance_id is position in log_growth_rates
+                        patient_id_array.append(patient.name)
+                        holiday_number_array.append(holiday_counter)
+                        #log_growth_rates = np.concatenate((log_growth_rates, growth_rate)) # training_instance_id is position in log_growth_rates
                         training_instance_id = training_instance_id + 1
 
-print(log_growth_rates)
+#https://stackoverflow.com/questions/56638467/how-to-fill-color-by-groups-in-histogram-using-matplotlib
+all_log_growth_rates = np.array(log_growth_rates)
+all_patient_id_array = np.array(patient_id_array)
+holiday_number_array = np.array(holiday_number_array)
+print(all_log_growth_rates)
+print(all_patient_id_array)
+
+# Histograms of growth rates
+# Colored per patient
+# The first 61 items, grouped by patients
+log_growth_rates = all_log_growth_rates[0:61]
+patient_id_array = all_patient_id_array[0:61]
+data = {'log_growth_rates': log_growth_rates,
+        'Patient': patient_id_array}
+df = pd.DataFrame(data)
+fig, ax = plt.subplots(figsize=(10, 10))
+sns.histplot(data=df, x='log_growth_rates', hue='Patient', stat='count', edgecolor=None, bins=200, legend=False, palette=drug_colors)
+ax.set_title('log_growth_rates')
+plt.savefig("./plots/histogram_per_patient_part_1.png")
+plt.show()
+# The rest of the regions, grouped by patients
+log_growth_rates = all_log_growth_rates[61:]
+patient_id_array = all_patient_id_array[61:]
+data = {'log_growth_rates': log_growth_rates,
+        'Patient': patient_id_array}
+df = pd.DataFrame(data)
+fig, ax = plt.subplots(figsize=(10, 10))
+sns.histplot(data=df, x='log_growth_rates', hue='Patient', stat='count', edgecolor=None, bins=200, legend=False, palette=drug_colors)
+ax.set_title('log_growth_rates')
+plt.savefig("./plots/histogram_per_patient_part_2.png")
+plt.show()
+
+# Histograms of growth rates
+# Colored per drug holiday
+data = {'log_growth_rates': all_log_growth_rates,
+        'Holiday_number': holiday_number_array}
+df = pd.DataFrame(data)
+all_holiday_numbers = pd.unique(df[['Holiday_number']].values.ravel('K'))
+N_different_holidays = len(all_holiday_numbers)
+fig, ax = plt.subplots(figsize=(10, 10))
+sns.histplot(data=df, x='log_growth_rates', hue='Holiday_number', stat='count', edgecolor=None, bins=200, legend=True, palette=sns.color_palette("viridis", n_colors=N_different_holidays)) #sns.color_palette("husl", N_different_holidays))
+ax.set_title('log_growth_rates')
+plt.savefig("./plots/histogram_per_holiday_number.png")
+plt.show()
+
+log_growth_rates = all_log_growth_rates
 fig, ax = plt.subplots()
 meadian_growth_rate = np.median(log_growth_rates)
 avg_growth_rate = np.mean(log_growth_rates)
@@ -145,6 +161,23 @@ std_growth_rate = np.std(log_growth_rates)
 labelllll = "Mean:      "+f'{avg_growth_rate:.3g}'+"\nStd:         "+f'{std_growth_rate:.3g}'+"\nN = "+str(len(log_growth_rates))
 ax.hist(log_growth_rates, bins=100) # Half mixture params zero, half nonzero. Interesting! (Must address how sensitive sensitive are too)
 ax.axvline(np.mean(log_growth_rates), color="k", linewidth=0.5, linestyle="-", label=labelllll)
+ax.set_title("Histogram of growth rates in drug holidays")
+ax.set_xlabel("Growth rate")
+ax.set_ylabel("Number of intervals")
+ax.legend()
+plt.savefig("./plots/drug_holiday_histogram_of_growth_rates.png")
+#plt.show()
+
+print(all_log_growth_rates)
+drug_colors
+fig, ax = plt.subplots()
+meadian_growth_rate = np.median(all_log_growth_rates)
+avg_growth_rate = np.mean(all_log_growth_rates)
+std_growth_rate = np.std(all_log_growth_rates)
+#"Median: "+f'{meadian_growth_rate:.3g}'
+labelllll = "Mean:      "+f'{avg_growth_rate:.3g}'+"\nStd:         "+f'{std_growth_rate:.3g}'+"\nN = "+str(len(all_log_growth_rates))
+ax.hist(all_log_growth_rates, bins=100) # Half mixture params zero, half nonzero. Interesting! (Must address how sensitive sensitive are too)
+ax.axvline(np.mean(all_log_growth_rates), color="k", linewidth=0.5, linestyle="-", label=labelllll)
 ax.set_title("Histogram of growth rates in drug holidays")
 ax.set_xlabel("Growth rate")
 ax.set_ylabel("Number of intervals")
@@ -179,4 +212,4 @@ plt.savefig("./plots/drug_holiday_Mproteins.png")
 end_time = time.time()
 time_duration = end_time - start_time
 print("Time elapsed:", time_duration)
-print("Number of intervals:", len(log_growth_rates))
+print("Number of intervals:", len(all_log_growth_rates))
