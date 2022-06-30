@@ -564,6 +564,28 @@ def least_squares_objective_function(array_x, patient):
     sumofsquares = np.sum((observations - predictions)**2)
     return sumofsquares
 
+# This function accepts parameter arrays containing all parameters including sigma, for any model 1 2 or 3
+def negative_loglikelihood_any_model(array_x, patient):
+    #placeholder_sigma = 1 # Used when I did not believe in the MLE sigma for model selection 
+    measurement_times = patient.measurement_times
+    treatment_history = patient.treatment_history
+    observations = patient.Mprotein_values
+    # Model 1: exp rho t            (2+1=3 parameters: Y0, rho, sigma)
+    if len(array_x) == 3:
+        Parameter_object_x = Parameters(Y_0=array_x[0], pi_r=1, g_r=array_x[1], g_s=0, k_1=0, sigma=array_x[2])
+    # Model 2: exp t(alpha - k)     (3+1=4 parameters: Y0, alpha, K, sigma)
+    elif len(array_x) == 4:
+        Parameter_object_x = Parameters(Y_0=array_x[0], pi_r=0, g_r=0, g_s=array_x[1], k_1=array_x[2], sigma=array_x[3])
+    # Model 3: Both together.       (5+1=6 parameters: Y0, pi, rho, alpha, K, sigma)
+    elif len(array_x) == 6:
+        Parameter_object_x = Parameters(Y_0=array_x[0], pi_r=array_x[1], g_r=array_x[2], g_s=array_x[3], k_1=array_x[4], sigma=array_x[5])
+    
+    predictions = measure_Mprotein_noiseless(Parameter_object_x, measurement_times, treatment_history)
+    sumofsquares = np.sum((observations - predictions)**2)
+    negative_loglikelihood = (len(observations)/2)*np.log(2*np.pi*Parameter_object_x.sigma**2) + sumofsquares/(2*Parameter_object_x.sigma**2)
+    #negative_loglikelihood = (len(observations)/2)*np.log(2*np.pi*placeholder_sigma**2) + sumofsquares/(2*placeholder_sigma**2)
+    return negative_loglikelihood
+
 def infer_parameters_simulated_patient(patient, lb, ub, N_iterations=10000):
     bounds_Y_0 = (lb[0], ub[0])
     bounds_pi_r = (lb[1], ub[1])
@@ -632,6 +654,36 @@ def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
         return Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=global_sigma)
     elif len(ub) == 4: # k_1 included in parameters, rdug holiday included in interval
         return Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=0, sigma=global_sigma)
+
+def get_optimization_result_any_model(args):
+    x0, patient, all_bounds = args
+    res = optimize.minimize(fun=negative_loglikelihood_any_model, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False}, method='SLSQP') # L-BFGS-B chosen automatically with bounds
+    return res
+
+def estimate_drug_response_parameters_any_model(patient, lb, ub, N_iterations=10000):
+    # This function accepts bounds and parameters of any model. THe length determines the model. 
+    all_bounds = tuple([(lb[ii], ub[ii]) for ii in range(len(ub))])
+    all_random_samples = np.random.uniform(0,1,(N_iterations, len(ub)))
+    x0_array = lb + np.multiply(all_random_samples, (ub-lb))
+
+    args = [(x0_array[i],patient,all_bounds) for i in range(len(x0_array))]
+    with Pool(15) as pool:
+        optim_results = pool.map(get_optimization_result_any_model,args)
+    fun_value_list = [elem.fun for elem in optim_results]
+    min_f_index = fun_value_list.index(min(fun_value_list))
+    x_value_list = [elem.x for elem in optim_results]
+    best_x = x_value_list[min_f_index]
+
+    # Model 1: exp rho t            (2+1=3 parameters: Y0, rho, sigma)
+    if len(lb) == 3:
+        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=1, g_r=best_x[1], g_s=0, k_1=0, sigma=best_x[2])
+    # Model 2: exp t(alpha - k)     (3+1=4 parameters: Y0, alpha, K, sigma)
+    elif len(best_x) == 4:
+        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=0, g_r=0, g_s=best_x[1], k_1=best_x[2], sigma=best_x[3])
+    # Model 3: Both together.       (5+1=6 parameters: Y0, pi, rho, alpha, K, sigma)
+    elif len(best_x) == 6:
+        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=best_x[5])
+    return Parameter_object_x
 
 def get_binary_outcome(period_start, patient, this_estimate, days_for_consideration=182):
     # If projected/observed M protein value goes above M protein value at treatment start within X days, then outcome = 1
