@@ -14,18 +14,20 @@ def get_minval_maxval(list_1, list_2, list_3, start_id, stop_id):
     return minval, maxval
 
 # Case 1: 
-N_patients = 10
-N_iter = 1000 # Number of independent starting points in parameter estimation
-# Two patient groups: Hyperdiploid (A) and Non-hyperdiploid (B)
+N_patients_per_group = 34
+N_patients = N_patients_per_group * 3
+N_iter = 10000 # Number of independent starting points in parameter estimation
+# Three patient groups: Hyperdiploid (A), middle guys (C) and Non-hyperdiploid (B)
 # They have no history, and all patients get the same treatment for the same amount of days. The treatment is observed through all the interval.
-# a) HRD completely resistant, Non-HRD completely sensitive
+# a) HRD completely resistant, Non-HRD completely sensitive, middel people have 0.1 resistant cells 
 average_pi_r_HRD = 1
+average_pi_r_middle_group = 0.1
 average_pi_r_non_HRD = 0
 # b) Both groups partially resistant, but HRD more
 #average_pi_r_HRD = 1
 #average_pi_r_non_HRD = 0
 variance_in_pi_r_both_groups = 0
-observation_std_m_protein = 1 # sigma 
+observation_std_m_protein = 5 # sigma 
 
 Y_0_population = 50
 g_r_population = 0.002
@@ -37,11 +39,14 @@ df_X_covariates = pd.DataFrame(
     {"training_instance_id" : [ii for ii in range(N_patients)],
     "HRD" : [0 for ii in range(N_patients)]}
 )
-df_X_covariates.loc[(df_X_covariates["training_instance_id"] < N_patients/2), "HRD"] = 1
+df_X_covariates.loc[(df_X_covariates["training_instance_id"] < N_patients*2/3), "HRD"] = 0.5
+df_X_covariates.loc[(df_X_covariates["training_instance_id"] < N_patients/3), "HRD"] = 1
 #df_drugs_and_dates.loc[(df_drugs_and_dates["MMTX_THERAPY"] == drug_name),'drug_id'] = drug_id
 #print(df_X_covariates.head(n=N_patients))
 print("Average HRD value:", np.mean(df_X_covariates["HRD"].head(n=N_patients)))
 
+group_2_start = int(N_patients/3)
+group_3_start = int(N_patients*2/3)
 
 # Create patients with M protein under treatment and estimate parameters Y, save them to outcome df
 """
@@ -71,18 +76,18 @@ end_of_history = 0
 
 # Bounds for model 1: 1 population, only resistant cells
 #                Y_0,  g_r  sigma
-lb_1 = np.array([  0, 0.00, 10e-6])
+lb_1 = np.array([  0, 0.001, 10e-6])
 ub_1 = np.array([100, 0.20, 10e4])
 
 # Bounds for model 2: 1 population, only sensitive cells
 #                Y_0,   g_s,    k_1,  sigma
-lb_2 = np.array([  0,   0.00,  0.20, 10e-6])
+lb_2 = np.array([  0,   0.001,  0.20, 10e-6])
 ub_2 = np.array([100, lb_2[2], 1.00, 10e4])
 
 # Bounds for model 3: sensitive and resistant population
-#                Y_0, pi_r,   g_r,   g_s,     k_1,  sigma
-lb_3 = np.array([  0,    0,  0.00,   0.00,   0.20, 10e-6])
-ub_3 = np.array([100,    1,  0.20,  lb_3[4], 1.00, 10e4])
+#                Y_0,     pi_r,   g_r,   g_s,     k_1,  sigma
+lb_3 = np.array([  0,    0.001,  0.001,   0.001,   0.20, 10e-6])
+ub_3 = np.array([100,   1-0.001,  0.20,  lb_3[4], 1.00, 10e4])
 
 bic_penalty_model_1 = len(lb_1)*np.log(number_of_measurements)
 bic_penalty_model_2 = len(lb_2)*np.log(number_of_measurements)
@@ -104,15 +109,23 @@ negative_loglikelihoods_3 = []
 bic_values_1 = []
 bic_values_2 = []
 bic_values_3 = []
+aic_values_1 = []
+aic_values_2 = []
+aic_values_3 = []
+aic_c_values_1 = []
+aic_c_values_2 = []
+aic_c_values_3 = []
 sigma_estimates_model_1 = []
 sigma_estimates_model_2 = []
 sigma_estimates_model_3 = []
 chosen_models = []
 for training_instance_id in range(N_patients):
     print("Patient", str(training_instance_id))
-    if training_instance_id < N_patients/2: # First half of patients are HRD
+    if training_instance_id < N_patients/3: # First third of patients are HRD
         expected_pi_r = average_pi_r_HRD
-    else:
+    elif training_instance_id < N_patients*2/3: # Second third of patients are middle people
+        expected_pi_r = average_pi_r_middle_group
+    else: # Last third of patients are non-HRD
         expected_pi_r = average_pi_r_non_HRD
     these_parameters = Parameters(Y_0=Y_0_population, pi_r=expected_pi_r, g_r=g_r_population, g_s=g_s_population, k_1=k_1_population, sigma=observation_std_m_protein)
     this_patient = Patient(these_parameters, measurement_times, treatment_history, name=str(training_instance_id))
@@ -156,7 +169,7 @@ for training_instance_id in range(N_patients):
     sigma_estimates_model_3.append(array_x[-1])
 
     N_observations_this_period = len(this_patient.measurement_times)
-    # BIC values
+    # BIC values: k*ln(N) + 2*negative loglikelihood
     bic_values_1.append(len(lb_1)*np.log(N_observations_this_period) + 2*negative_loglikelihoods_1[training_instance_id])
     bic_values_2.append(len(lb_2)*np.log(N_observations_this_period) + 2*negative_loglikelihoods_2[training_instance_id])
     bic_values_3.append(len(lb_3)*np.log(N_observations_this_period) + 2*negative_loglikelihoods_3[training_instance_id])
@@ -164,6 +177,24 @@ for training_instance_id in range(N_patients):
     print(bic_values_1[training_instance_id])
     print(bic_values_2[training_instance_id])
     print(bic_values_3[training_instance_id])
+
+    # AIC values: 2*k + 2*negative loglikelihood
+    aic_values_1.append(2*len(lb_1) + 2*negative_loglikelihoods_1[training_instance_id])
+    aic_values_2.append(2*len(lb_2) + 2*negative_loglikelihoods_2[training_instance_id])
+    aic_values_3.append(2*len(lb_3) + 2*negative_loglikelihoods_3[training_instance_id])
+    #print("AIC")
+    #print(aic_values_1[training_instance_id])
+    #print(aic_values_2[training_instance_id])
+    #print(aic_values_3[training_instance_id])
+
+    # Second order AIC: 2*k + 2*negative loglikelihood + 2k(k+1)/(N-k-1)
+    aic_c_values_1.append(2*len(lb_1) + 2*negative_loglikelihoods_1[training_instance_id] + 2*len(lb_1)*(len(lb_1)+1)/(N_observations_this_period - len(lb_1) - 1))
+    aic_c_values_2.append(2*len(lb_2) + 2*negative_loglikelihoods_2[training_instance_id] + 2*len(lb_2)*(len(lb_2)+1)/(N_observations_this_period - len(lb_2) - 1))
+    aic_c_values_3.append(2*len(lb_3) + 2*negative_loglikelihoods_3[training_instance_id] + 2*len(lb_3)*(len(lb_3)+1)/(N_observations_this_period - len(lb_3) - 1))
+    #print("Second order AIC")
+    #print(aic_c_values_1[training_instance_id])
+    #print(aic_c_values_2[training_instance_id])
+    #print(aic_c_values_3[training_instance_id])
 
     # Model selection (1 2 or 3) by BIC. Then save outcomes
     bic_values_this_patient = bic_values_1[training_instance_id], bic_values_2[training_instance_id], bic_values_3[training_instance_id]
@@ -175,7 +206,8 @@ for training_instance_id in range(N_patients):
     #Y_increase_or_not = np.concatenate((Y_increase_or_not, np.array([binary_outcome])))
 
     # Plot truth and estimates
-    #plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=this_estimate, PLOT_ESTIMATES=True, plot_title="Simulated patient "+str(training_instance_id), savename="./plots/simulation_plots/patient_"+str(training_instance_id)+".png")
+    if training_instance_id in [0, group_2_start, group_3_start]:
+        plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=this_estimate, PLOT_ESTIMATES=True, plot_title="Simulated patient "+str(training_instance_id), savename="./plots/simulation_plots/patient_"+str(training_instance_id)+".png")
     end_time = time.time()
     time_duration = end_time - start_time
     print("Time elapsed:", time_duration)
@@ -199,6 +231,8 @@ else:
     fig = plt.figure(figsize=(15, 6))
 ax1 = fig.add_subplot(111)
 ax1.axhline(observation_std_m_protein, color="k", label="True sigma", zorder=-5)
+ax1.axvline(group_2_start-0.5, linestyle="--", color="gray", label="True sigma", zorder=-5)
+ax1.axvline(group_3_start-0.5, linestyle="--", color="gray", label="True sigma", zorder=-5)
 ax1.scatter(range(N_patients),sigma_estimates_model_1, color="r", label="Model 1: Only resistant")
 ax1.scatter(range(N_patients),sigma_estimates_model_2, color="b", label="Model 2: Only sensitive")
 ax1.scatter(range(N_patients),sigma_estimates_model_3, color="g", label="Model 3: Full model")
@@ -214,10 +248,11 @@ plt.show()
 plt.close()
 
 # Plot loglikelihoods
-fig = plt.figure(figsize=(12, 6))
-ax1 = fig.add_subplot(121)
-minval, maxval = get_minval_maxval(negative_loglikelihoods_1, negative_loglikelihoods_2, negative_loglikelihoods_3, 0, int(N_patients/2))
-for ii in range(0,int(N_patients/2)):
+fig = plt.figure(figsize=(18, 6))
+ax1 = fig.add_subplot(131)
+minval, maxval = get_minval_maxval(negative_loglikelihoods_1, negative_loglikelihoods_2, negative_loglikelihoods_3, 0,group_2_start)
+ax1.axvline(2, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(0,group_2_start):
     logl_values_this_patient = [negative_loglikelihoods_2[ii], negative_loglikelihoods_1[ii], negative_loglikelihoods_3[ii]]
     ax1.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
     min_position = logl_values_this_patient.index(min(logl_values_this_patient))
@@ -228,31 +263,163 @@ ax1.set_yscale('log')
 ax1.set_ylim((minval, maxval))
 ax1.set_ylabel("Negative loglikelihood")
 ax1.set_title("Resistant patients")
+ax1.legend(loc="best")
 
-ax2 = fig.add_subplot(122)
-minval, maxval = get_minval_maxval(negative_loglikelihoods_1, negative_loglikelihoods_2, negative_loglikelihoods_3, int(N_patients/2), N_patients)
-for ii in range(int(N_patients/2),N_patients):
-    logl_values_this_patient = [negative_loglikelihoods_1[ii], negative_loglikelihoods_2[ii], negative_loglikelihoods_3[ii]]
+ax2 = fig.add_subplot(132)
+minval, maxval = get_minval_maxval(negative_loglikelihoods_1, negative_loglikelihoods_2, negative_loglikelihoods_3, group_2_start,group_3_start)
+ax2.axvline(3, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(group_2_start,group_3_start):
+    logl_values_this_patient = [negative_loglikelihoods_2[ii], negative_loglikelihoods_1[ii], negative_loglikelihoods_3[ii]]
     ax2.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
     min_position = logl_values_this_patient.index(min(logl_values_this_patient))
     ax2.scatter([1+min_position], [logl_values_this_patient[min_position]], s=60)
 ax2.set_xticks([1,2,3])
-ax2.set_xticklabels(["Only resistant", "Only sensitive", "Full model"])
+ax2.set_xticklabels(["Only sensitive", "Only resistant", "Full model"])
 ax2.set_yscale('log')
 ax2.set_ylim((minval, maxval))
 ax2.set_ylabel("Negative loglikelihood")
-ax2.set_title("Sensitive patients")
+ax2.set_title("0.1 fraction resistant")
+ax2.legend(loc="best")
+
+ax3 = fig.add_subplot(133)
+minval, maxval = get_minval_maxval(negative_loglikelihoods_1, negative_loglikelihoods_2, negative_loglikelihoods_3, group_3_start,N_patients)
+ax3.axvline(2, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(group_3_start,N_patients):
+    logl_values_this_patient = [negative_loglikelihoods_1[ii], negative_loglikelihoods_2[ii], negative_loglikelihoods_3[ii]]
+    ax3.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
+    min_position = logl_values_this_patient.index(min(logl_values_this_patient))
+    ax3.scatter([1+min_position], [logl_values_this_patient[min_position]], s=60)
+ax3.set_xticks([1,2,3])
+ax3.set_xticklabels(["Only resistant", "Only sensitive", "Full model"])
+ax3.set_yscale('log')
+ax3.set_ylim((minval, maxval))
+ax3.set_ylabel("Negative loglikelihood")
+ax3.set_title("Sensitive patients")
+ax3.legend(loc="best")
 plt.suptitle("Negative loglikelihood")
 plt.tight_layout()
 plt.savefig("./plots/simulation_plots/model_comparison_loglikelihood_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 #plt.show()
 plt.close()
 
+# Plot AIC
+fig = plt.figure(figsize=(18, 6))
+ax1 = fig.add_subplot(131)
+minval, maxval = get_minval_maxval(aic_values_1, aic_values_2, aic_values_3, 0, group_2_start)
+ax1.axvline(2, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(0,group_2_start):
+    logl_values_this_patient = [aic_values_2[ii], aic_values_1[ii], aic_values_3[ii]]
+    ax1.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
+    min_position = logl_values_this_patient.index(min(logl_values_this_patient))
+    ax1.scatter([1+min_position], [logl_values_this_patient[min_position]], s=60)
+ax1.set_xticks([1,2,3])
+ax1.set_xticklabels(["Only sensitive", "Only resistant", "Full model"])
+ax1.set_yscale('log')
+ax1.set_ylim((minval, maxval))
+ax1.set_ylabel("AIC")
+ax1.set_title("Resistant patients")
+ax1.legend(loc="best")
+
+ax2 = fig.add_subplot(132)
+minval, maxval = get_minval_maxval(aic_values_1, aic_values_2, aic_values_3, group_2_start,group_3_start)
+ax2.axvline(3, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(group_2_start,group_3_start):
+    logl_values_this_patient = [aic_values_2[ii], aic_values_1[ii], aic_values_3[ii]]
+    ax2.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
+    min_position = logl_values_this_patient.index(min(logl_values_this_patient))
+    ax2.scatter([1+min_position], [logl_values_this_patient[min_position]], s=60)
+ax2.set_xticks([1,2,3])
+ax2.set_xticklabels(["Only sensitive", "Only resistant", "Full model"])
+ax2.set_yscale('log')
+ax2.set_ylim((minval, maxval))
+ax2.set_ylabel("AIC")
+ax2.set_title("0.1 fraction resistant")
+ax2.legend(loc="best")
+
+ax3 = fig.add_subplot(133)
+minval, maxval = get_minval_maxval(aic_values_1, aic_values_2, aic_values_3, group_3_start,N_patients)
+ax3.axvline(2, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(group_3_start,N_patients):
+    logl_values_this_patient = [aic_values_1[ii], aic_values_2[ii], aic_values_3[ii]]
+    ax3.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
+    min_position = logl_values_this_patient.index(min(logl_values_this_patient))
+    ax3.scatter([1+min_position], [logl_values_this_patient[min_position]], s=60)
+ax3.set_xticks([1,2,3])
+ax3.set_xticklabels(["Only resistant", "Only sensitive", "Full model"])
+ax3.set_yscale('log')
+ax3.set_ylim((minval, maxval))
+ax3.set_ylabel("AIC")
+ax3.set_title("Sensitive patients")
+ax3.legend(loc="best")
+
+plt.suptitle("AIC")
+plt.tight_layout()
+plt.savefig("./plots/simulation_plots/model_comparison_aic_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+#plt.show()
+plt.close()
+
+# Plot second order AIC
+fig = plt.figure(figsize=(18, 6))
+ax1 = fig.add_subplot(131)
+minval, maxval = get_minval_maxval(aic_c_values_1, aic_c_values_2, aic_c_values_3, 0, group_2_start)
+ax1.axvline(2, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(0,group_2_start):
+    logl_values_this_patient = [aic_c_values_2[ii], aic_c_values_1[ii], aic_c_values_3[ii]]
+    ax1.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
+    min_position = logl_values_this_patient.index(min(logl_values_this_patient))
+    ax1.scatter([1+min_position], [logl_values_this_patient[min_position]], s=60)
+ax1.set_xticks([1,2,3])
+ax1.set_xticklabels(["Only sensitive", "Only resistant", "Full model"])
+ax1.set_yscale('log')
+ax1.set_ylim((minval, maxval))
+ax1.set_ylabel("Second order AIC")
+ax1.set_title("Resistant patients")
+ax1.legend(loc="best")
+
+ax2 = fig.add_subplot(132)
+minval, maxval = get_minval_maxval(aic_c_values_1, aic_c_values_2, aic_c_values_3, group_2_start,group_3_start)
+ax2.axvline(3, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(group_2_start,group_3_start):
+    logl_values_this_patient = [aic_c_values_2[ii], aic_c_values_1[ii], aic_c_values_3[ii]]
+    ax2.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
+    min_position = logl_values_this_patient.index(min(logl_values_this_patient))
+    ax2.scatter([1+min_position], [logl_values_this_patient[min_position]], s=60)
+ax2.set_xticks([1,2,3])
+ax2.set_xticklabels(["Only sensitive", "Only resistant", "Full model"])
+ax2.set_yscale('log')
+ax2.set_ylim((minval, maxval))
+ax2.set_ylabel("Second order AIC")
+ax2.set_title("0.1 fraction resistant")
+ax2.legend(loc="best")
+
+ax3 = fig.add_subplot(133)
+minval, maxval = get_minval_maxval(aic_c_values_1, aic_c_values_2, aic_c_values_3, group_3_start,N_patients)
+ax3.axvline(2, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(group_3_start,N_patients):
+    logl_values_this_patient = [aic_c_values_1[ii], aic_c_values_2[ii], aic_c_values_3[ii]]
+    ax3.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
+    min_position = logl_values_this_patient.index(min(logl_values_this_patient))
+    ax3.scatter([1+min_position], [logl_values_this_patient[min_position]], s=60)
+ax3.set_xticks([1,2,3])
+ax3.set_xticklabels(["Only resistant", "Only sensitive", "Full model"])
+ax3.set_yscale('log')
+ax3.set_ylim((minval, maxval))
+ax3.set_ylabel("Second order AIC")
+ax3.set_title("Sensitive patients")
+ax3.legend(loc="best")
+
+plt.suptitle("Second order AIC")
+plt.tight_layout()
+plt.savefig("./plots/simulation_plots/model_comparison_aic_c_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+#plt.show()
+plt.close()
+
 # Plot BIC
-fig = plt.figure(figsize=(12, 6))
-ax1 = fig.add_subplot(121)
-minval, maxval = get_minval_maxval(bic_values_1, bic_values_2, bic_values_3, 0, int(N_patients/2))
-for ii in range(0,int(N_patients/2)):
+fig = plt.figure(figsize=(18, 6))
+ax1 = fig.add_subplot(131)
+minval, maxval = get_minval_maxval(bic_values_1, bic_values_2, bic_values_3, 0, group_2_start)
+ax1.axvline(2, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(0,group_2_start):
     logl_values_this_patient = [bic_values_2[ii], bic_values_1[ii], bic_values_3[ii]]
     ax1.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
     min_position = logl_values_this_patient.index(min(logl_values_this_patient))
@@ -263,20 +430,39 @@ ax1.set_yscale('log')
 ax1.set_ylim((minval, maxval))
 ax1.set_ylabel("BIC")
 ax1.set_title("Resistant patients")
+ax1.legend(loc="best")
 
-ax2 = fig.add_subplot(122)
-minval, maxval = get_minval_maxval(bic_values_1, bic_values_2, bic_values_3, int(N_patients/2), N_patients)
-for ii in range(int(N_patients/2),N_patients):
-    logl_values_this_patient = [bic_values_1[ii], bic_values_2[ii], bic_values_3[ii]]
+ax2 = fig.add_subplot(132)
+minval, maxval = get_minval_maxval(bic_values_1, bic_values_2, bic_values_3, group_2_start,group_3_start)
+ax2.axvline(3, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(group_2_start,group_3_start):
+    logl_values_this_patient = [bic_values_2[ii], bic_values_1[ii], bic_values_3[ii]]
     ax2.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
     min_position = logl_values_this_patient.index(min(logl_values_this_patient))
     ax2.scatter([1+min_position], [logl_values_this_patient[min_position]], s=60)
 ax2.set_xticks([1,2,3])
-ax2.set_xticklabels(["Only resistant", "Only sensitive", "Full model"])
+ax2.set_xticklabels(["Only sensitive", "Only resistant", "Full model"])
 ax2.set_yscale('log')
 ax2.set_ylim((minval, maxval))
 ax2.set_ylabel("BIC")
-ax2.set_title("Sensitive patients")
+ax2.set_title("0.1 fraction resistant")
+ax2.legend(loc="best")
+
+ax3 = fig.add_subplot(133)
+minval, maxval = get_minval_maxval(bic_values_1, bic_values_2, bic_values_3, group_3_start,N_patients)
+ax3.axvline(2, linestyle="-", color="k", label="True model", zorder=-5)
+for ii in range(group_3_start,N_patients):
+    logl_values_this_patient = [bic_values_1[ii], bic_values_2[ii], bic_values_3[ii]]
+    ax3.plot([1,2,3], logl_values_this_patient, marker='x', linestyle='-', linewidth=1)
+    min_position = logl_values_this_patient.index(min(logl_values_this_patient))
+    ax3.scatter([1+min_position], [logl_values_this_patient[min_position]], s=60)
+ax3.set_xticks([1,2,3])
+ax3.set_xticklabels(["Only resistant", "Only sensitive", "Full model"])
+ax3.set_yscale('log')
+ax3.set_ylim((minval, maxval))
+ax3.set_ylabel("BIC")
+ax3.set_title("Sensitive patients")
+ax3.legend(loc="best")
 
 plt.suptitle("BIC")
 plt.tight_layout()

@@ -423,9 +423,15 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     fig, ax1 = plt.subplots()
     ax1.patch.set_facecolor('none')
     # Plot sensitive and resistant
-    ax1.plot(plotting_times, plotting_resistant_mprotein_values, linestyle='-', marker='', zorder=3, color='r', label="Estimated M protein (resistant)")
-    # Plot total M protein
-    ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='k', label="Estimated M protein (total)")
+    if true_parameters.pi_r > 10e-10 and true_parameters.pi_r < 1-10e-10: 
+        # Plot resistant
+        ax1.plot(plotting_times, plotting_resistant_mprotein_values, linestyle='-', marker='', zorder=3, color='r', label="Estimated M protein (resistant)")
+        # Plot total M protein
+        ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='k', label="Estimated M protein (total)")
+    elif true_parameters.pi_r > 1-10e-10:
+        ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='r', label="Estimated M protein (total)")
+    else:
+        ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='k', label="Estimated M protein (total)")
 
     ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
     #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
