@@ -1,5 +1,6 @@
 # Purposes of this script: 
 #   Load COMMPASS_patient_dictionary
+#   Add parameter estimates to the patients and create COMMPASS_patient_dictionary_with_estimates
 #   Find sections with the right drug combination and enough data to perform inference
 #   Perform inference of parameter set in each region
 from utilities import *
@@ -8,7 +9,7 @@ from utilities import *
 N_iter = 1000 # separate minimzations of the least squares when fitting parameters
 minimum_number_of_measurements = 3 # required number of M protein measurements for a period to be included in the dataset
 threshold_for_closeness_for_M_protein_at_start = 60 # If M protein at period start is missing, it is imputed using the nearest measurement, but only if closer than this threshold number of days.
-INCLUDE_SUBSEQUENT_DRUG_HOLIDAY = True # If a treatment is followed by a drug holiday, this decided if the holiday is included as part of the period
+INCLUDE_SUBSEQUENT_DRUG_HOLIDAY = False #True # If a treatment is followed by a drug holiday, this decided if the holiday is included as part of the period
 
 ## Inference
 # The length of ub and lb implicitly decides whether the effect of treatment is given a parameter or not. 
@@ -34,7 +35,7 @@ unique_treat_counter = pickle.load(picklefile)
 picklefile.close()
 
 # Find the treatment id of the required treatment, extract those treatment regions and perform inference there
-def estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, how_many_regions, training_instance_dict, patient, Y_parameters, treatment_id_of_interest, Y_increase_or_not):
+def estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, how_many_regions, training_instance_dict, patient, Y_parameters, treatment_id_of_interest):
     # Check how many M protein values are within period, and find the observed values, times and drug periods in the period
     valid_Mprotein = dummy_Mprotein_values[dummy_measurement_times>=period_start]
     valid_Kappa = dummy_Kappa_values[dummy_measurement_times>=period_start]
@@ -48,16 +49,15 @@ def estimate_and_save_region_estimate(training_instance_id, period_start, period
     if len(valid_times) >= minimum_number_of_measurements and max(valid_Mprotein) > 0:
         print("Saving a case from", patient.name, "- treatment id", treatment_id_of_interest)
         how_many_regions[treatment_id_of_interest] = how_many_regions[treatment_id_of_interest] + 1
-        # Note the time limits of this period
-        training_instance_dict[training_instance_id] = [patient.name, period_start, period_end, treatment_id_of_interest]
+        # Note the time limits of this period: Last M protein measurement while still on treatment
+        last_measurement_time_on_treatment = valid_times[-1]
         # Estimate parameters for a dummy patient within this interval
         dummmy_patient = COMMPASS_Patient(measurement_times=valid_times, drug_dates=[], drug_history=[], treatment_history=this_history, Mprotein_values=valid_Mprotein, Kappa_values=valid_Kappa, Lambda_values=valid_Lambda, covariates=[], name="dummy")
         this_estimate = estimate_drug_response_parameters(dummmy_patient, lb, ub, N_iterations=N_iter)
+        training_instance_dict[training_instance_id] = [patient.name, period_start, period_end, treatment_id_of_interest, last_measurement_time_on_treatment, this_estimate]
         # Add estimates to Y_parameters
         Y_parameters.append(this_estimate) # training_instance_id is position in Y_parameters
-        binary_outcome = get_binary_outcome(period_start, patient, this_estimate)
-        Y_increase_or_not = np.concatenate((Y_increase_or_not, np.array([binary_outcome])))
-        patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient)
+        #patient.add_parameter_estimate(this_estimate, (period_start, period_end), dummmy_patient) # NOt really used, it is in training_instance_dict
         training_instance_id = training_instance_id + 1
 
         # Plotting treatment region with estimate
@@ -67,7 +67,7 @@ def estimate_and_save_region_estimate(training_instance_id, period_start, period
         savename = "./COMMPASS_estimate_plots/treatment_id_"+str(treatment_id_of_interest)+"/Treatment_"+str(treatment_id_of_interest)+"_"+patient.name+"_at_time"+str(period_start)+"Y_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sigma="+str(estimated_parameters.sigma)+".png"
         plot_title = patient.name
         plot_treatment_region_with_estimate(estimated_parameters, plot_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=plot_title, savename=savename)
-    return training_instance_id, how_many_regions, training_instance_dict, patient, Y_parameters, Y_increase_or_not
+    return training_instance_id, how_many_regions, training_instance_dict, patient, Y_parameters
 
 # A training instance is a pair of history covariates X and estimated parameters Y
 # Define minimum number of measurements for including period as training instance to X and Y
@@ -80,7 +80,6 @@ print("\nFinding right regions and estimating parameters...")
 training_instance_id = 0
 training_instance_dict = {} # A dictionary mapping training_instance_id to the patient name and the start and end of the interval with the treatment of interest 
 Y_parameters = []
-Y_increase_or_not = np.array([])
 
 #treatment_id_of_interest = 15 # Dex+Len+Bor #COMMPASS_patient_dictionary["MMRF_1293"].treatment_history[5].id
 # Iterate over all patients, look at their treatment periods one by one and check if it qualifies as a training item 
@@ -152,7 +151,7 @@ for name, patient in COMMPASS_patient_dictionary.items():
                             valid_interval = False
                             period_end = treatment.end
                             # Estimate parameters, add to Y and to the patient using the common function
-                            training_instance_id, how_many_regions, training_instance_dict, patient, Y_parameters, Y_increase_or_not = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, how_many_regions, training_instance_dict, patient, Y_parameters, treatment_id_of_interest, Y_increase_or_not)
+                            training_instance_id, how_many_regions, training_instance_dict, patient, Y_parameters = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, how_many_regions, training_instance_dict, patient, Y_parameters, treatment_id_of_interest)
                             dummy_measurement_times = np.array([])
                             dummy_Mprotein_values = np.array([])
                             dummy_Kappa_values = np.array([])
@@ -164,7 +163,7 @@ for name, patient in COMMPASS_patient_dictionary.items():
                             if treatment_id_of_interest in [element.id for element in this_history]:
                                 period_end = treatment.start
                                 # Estimate parameters, add to Y and to the patient using the common function
-                                training_instance_id, how_many_regions, training_instance_dict, patient, Y_parameters, Y_increase_or_not = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, how_many_regions, training_instance_dict, patient, Y_parameters, treatment_id_of_interest, Y_increase_or_not)
+                                training_instance_id, how_many_regions, training_instance_dict, patient, Y_parameters = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, how_many_regions, training_instance_dict, patient, Y_parameters, treatment_id_of_interest)
                                 dummy_measurement_times = np.array([])
                                 dummy_Mprotein_values = np.array([])
                                 dummy_Kappa_values = np.array([])
@@ -175,22 +174,18 @@ for name, patient in COMMPASS_patient_dictionary.items():
                     if treatment_id_of_interest in [element.id for element in this_history]:
                         period_end = patient.treatment_history[-1].end
                         # Estimate parameters, add to Y and to the patient using the common function
-                        training_instance_id, how_many_regions, training_instance_dict, patient, Y_parameters, Y_increase_or_not = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, how_many_regions, training_instance_dict, patient, Y_parameters, treatment_id_of_interest, Y_increase_or_not)
+                        training_instance_id, how_many_regions, training_instance_dict, patient, Y_parameters = estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, how_many_regions, training_instance_dict, patient, Y_parameters, treatment_id_of_interest)
 
 end_time = time.time()
 time_duration = end_time - start_time
 print("Time elapsed:", time_duration)
-print("Number of intervals:", len(Y_increase_or_not))
-print("Number of 0s:", len(Y_increase_or_not) - np.count_nonzero(Y_increase_or_not))
-print("Number of 1s:", sum(Y_increase_or_not[Y_increase_or_not == 1]))
-print("Number of nans:", sum(np.isnan(Y_increase_or_not)))
-print("Number of other things:", sum([(elem not in [0,1]) for elem in Y_increase_or_not]) - sum(np.isnan(Y_increase_or_not)))
 #COMMPASS_patient_dictionary["MMRF_1293"].print()
 
 #print("Treatment id of interest:", treatment_id_of_interest)
 #print("Number of regions with", minimum_number_of_measurements, "or more M protein measurements:", how_many_regions[treatment_id_of_interest])
 
-np.save("training_instance_dict.npy", training_instance_dict)
+np.save("./binaries_and_pickles/training_instance_dict.npy", training_instance_dict)
+print(len(training_instance_dict.values()))
 ###np.save("Y_parameters.npy", np.array(Y_parameters))
 
 ####print("Sort(enumerate(how_many_regions))", Sort(enumerate(how_many_regions)))
@@ -212,6 +207,6 @@ pickle.dump(np.array(Y_parameters), picklefile)
 #close the file
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/Y_increase_or_not', 'wb')
-pickle.dump(Y_increase_or_not, picklefile)
-picklefile.close()
+#picklefile = open('./binaries_and_pickles/COMMPASS_patient_dictionary_with_estimates', 'wb')
+#pickle.dump(COMMPASS_patient_dictionary, picklefile)
+#picklefile.close()
