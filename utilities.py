@@ -20,6 +20,22 @@ def Sort(sub_li):
     return(sorted(sub_li, key = lambda x: x[1]))
 
 s = 25 # scatter plot object size
+GROWTH_LB = 0.001
+PI_LB = 0.001
+# Bounds for model 1: 1 population, only resistant cells
+#                Y_0,  g_r  sigma
+lb_1 = np.array([  0, GROWTH_LB, 10e-6])
+ub_1 = np.array([100, 0.20, 10e4])
+
+# Bounds for model 2: 1 population, only sensitive cells
+#                Y_0,   g_s,    k_1,  sigma
+lb_2 = np.array([  0,   GROWTH_LB,  0.20, 10e-6])
+ub_2 = np.array([100, lb_2[2],  1.00, 10e4])
+
+# Bounds for model 3: sensitive and resistant population
+#                Y_0,       pi_r,    g_r,    g_s,     k_1,  sigma
+lb_3 = np.array([  0,      PI_LB,  GROWTH_LB,   GROWTH_LB,   0.20, 10e-6])
+ub_3 = np.array([100,    1-PI_LB,  0.20,  lb_3[4], 1.00, 10e4])
 
 np.random.seed(42)
 from numpy.random import MT19937
@@ -682,10 +698,10 @@ def estimate_drug_response_parameters_any_model(patient, lb, ub, N_iterations=10
 
     # Model 1: exp rho t            (2+1=3 parameters: Y0, rho, sigma)
     if len(lb) == 3:
-        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=1, g_r=best_x[1], g_s=0, k_1=0, sigma=best_x[2])
+        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=1-PI_LB, g_r=best_x[1], g_s=GROWTH_LB, k_1=0, sigma=best_x[2])
     # Model 2: exp t(alpha - k)     (3+1=4 parameters: Y0, alpha, K, sigma)
     elif len(best_x) == 4:
-        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=0, g_r=0, g_s=best_x[1], k_1=best_x[2], sigma=best_x[3])
+        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=PI_LB, g_r=GROWTH_LB, g_s=best_x[1], k_1=best_x[2], sigma=best_x[3])
     # Model 3: Both together.       (5+1=6 parameters: Y0, pi, rho, alpha, K, sigma)
     elif len(best_x) == 6:
         Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=best_x[5])
@@ -727,3 +743,12 @@ def get_binary_outcome(period_start, patient, this_estimate, days_for_considerat
     #else: # if the list has no length, i.e. we have no measurements of it
     #    binary_outcome = np.nan
     #return binary_outcome
+
+#####################################
+# Posterior evaluation
+#####################################
+"""
+def posterior(all_psi_i, theta):
+    likelihood_of_observed_M_given_psi_model_1 = 
+
+"""

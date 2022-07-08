@@ -36,6 +36,7 @@ for training_instance_id, value in training_instance_dict.items():
     end_of_history = period_start # The time at which history ends and the treatment of interest begins 
     #period_end = value[2] # This is irrelevant as it happens in the future
     treatment_id = value[3]
+    last_measurement_time_on_treatment = value[4]
     
     single_entry = df_mprotein_and_dates[(df_mprotein_and_dates["PUBLIC_ID"] == patient_name) & (df_mprotein_and_dates["VISITDY"] < end_of_history)]
     single_entry["training_instance_id"] = training_instance_id
@@ -46,6 +47,8 @@ for training_instance_id, value in training_instance_dict.items():
         dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'D_LAB_serum_m_protein':[0], 'D_LAB_serum_kappa':[0], 'D_LAB_serum_lambda':[0], 'VISITDY':[-3650]})
         df_Mprotein_pre_tsfresh = pd.concat([df_Mprotein_pre_tsfresh, dummy], ignore_index=True)
 #print(df_Mprotein_pre_tsfresh.head(n=20))
+# Feature extraction requires only numerical values in columns
+df_Mprotein_pre_tsfresh = df_Mprotein_pre_tsfresh[["D_LAB_serum_m_protein", 'D_LAB_serum_kappa', 'D_LAB_serum_lambda', "VISITDY", "training_instance_id"]] # Remove PUBLIC_ID
 
 # Drugs
 df_drugs_pre_tsfresh = pd.DataFrame(columns=['PUBLIC_ID', 'MMTX_THERAPY', 'drug_id', 'startday', 'stopday', "training_instance_id"])
@@ -56,6 +59,7 @@ for training_instance_id, value in training_instance_dict.items():
     end_of_history = period_start # The time at which history ends and the treatment of interest begins 
     #period_end = value[2] # This is irrelevant as it happens in the future
     treatment_id = value[3]
+    last_measurement_time_on_treatment = value[4]
 
     single_entry = df_drugs_and_dates[(df_drugs_and_dates["PUBLIC_ID"] == patient_name) & (df_drugs_and_dates["stopday"] <= end_of_history)]
     single_entry["training_instance_id"] = training_instance_id
@@ -63,20 +67,24 @@ for training_instance_id, value in training_instance_dict.items():
     
     # Add zero row if the id is missing from the drug df. This should have no effect at all since it has zero duration
     if training_instance_id not in pd.unique(df_drugs_pre_tsfresh[['training_instance_id']].values.ravel('K')):
-        dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'drug_id':[0], 'startday':[end_of_history-3650], 'stopday':[end_of_history-3650]})
+        #dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'drug_id':[0], 'startday':[end_of_history-3650], 'stopday':[end_of_history-3650]})
+        dummy = pd.DataFrame({"training_instance_id":[training_instance_id], 'drug_id':[0], 'startday':[0], 'stopday':[0]})
         df_drugs_pre_tsfresh = pd.concat([df_drugs_pre_tsfresh, dummy], ignore_index=True)
-#print(df_drugs_pre_tsfresh.head(n=20))
+df_drugs_pre_tsfresh["duration"] = df_drugs_pre_tsfresh["stopday"] - df_drugs_pre_tsfresh["startday"]
+#df_drugs_pre_tsfresh = df_drugs_pre_tsfresh[['drug_id','startday', 'stopday', "training_instance_id"]] # Remove PUBLIC_ID and duration
+df_drugs_pre_tsfresh = df_drugs_pre_tsfresh[['drug_id','startday', 'duration', "training_instance_id"]] # Remove PUBLIC_ID and stopday
+#print(df_drugs_pre_tsfresh.isna().any())
+#print(df_drugs_pre_tsfresh.columns[df_drugs_pre_tsfresh.isna().any()].tolist())
 
-# Feature extraction requires only numerical values in columns
 from tsfresh import extract_features
 print("M protein time series:")
-df_Mprotein_pre_tsfresh = df_Mprotein_pre_tsfresh[["D_LAB_serum_m_protein", 'D_LAB_serum_kappa', 'D_LAB_serum_lambda', "VISITDY", "training_instance_id"]] # Remove PUBLIC_ID
 #values = {"D_LAB_serum_m_protein":0, 'D_LAB_serum_kappa':0, 'D_LAB_serum_lambda':0} #"VISITDY":0
 #df_Mprotein_pre_tsfresh = df_Mprotein_pre_tsfresh.fillna(value=values)
 extracted_features_M_protein = extract_features(df_Mprotein_pre_tsfresh, column_id="training_instance_id", column_sort="VISITDY")
 
+values = {'drug_id':0,'startday':0, 'duration':0, "training_instance_id":0} #"VISITDY":0
+df_drugs_pre_tsfresh = df_drugs_pre_tsfresh.fillna(value=values)
 print("Drug start and stop day time series:")
-df_drugs_pre_tsfresh = df_drugs_pre_tsfresh[['drug_id','startday', 'stopday', "training_instance_id"]] # Remove PUBLIC_ID
 extracted_features_drugs = extract_features(df_drugs_pre_tsfresh, column_id="training_instance_id", column_sort="startday")
 ###################################################################
 
@@ -129,7 +137,8 @@ for training_instance_id, value in training_instance_dict.items():
     end_of_history = period_start # The time at which history ends and the treatment of interest begins 
     #period_end = value[2] # This is irrelevant as it happens in the future
     treatment_id = value[3]
-    
+    last_measurement_time_on_treatment = value[4]
+
     # Drugs 
     drug_filter_values = [compute_drug_filter_values(this_filter, patient, end_of_history) for this_filter in flat_filter_bank]
     # Flatten the array to get a list of features for all drugs, all covariates
@@ -164,9 +173,11 @@ for training_instance_id, value in training_instance_dict.items():
     end_of_history = period_start # The time at which history ends and the treatment of interest begins 
     #period_end = value[2] # This is irrelevant as it happens in the future
     treatment_id = value[3]
+    last_measurement_time_on_treatment = value[4]
     
     single_entry = df_IA17[df_IA17["PUBLIC_ID"] == patient_name]
     single_entry["training_instance_id"] = training_instance_id
+    single_entry["time_since_diagnosis"] = end_of_history
 
     # Future treatment 
     drug_names = get_drug_names_from_treatment_id_COMMPASS(treatment_id, treatment_id_to_drugs_dictionary_COMMPASS)
@@ -180,10 +191,25 @@ for training_instance_id, value in training_instance_dict.items():
 # Sort by training_instance_id, drop that and PUBLIC_ID. Fillna values
 df_clinical_covariates = df_clinical_covariates.sort_values(by=['training_instance_id'])
 df_clinical_covariates.reset_index(drop=True, inplace=True)
-df_clinical_covariates = df_clinical_covariates[['ecog', 'DEMOG_PATIENTAGE', 'DEMOG_HEIGHT', 'DEMOG_WEIGHT', 'D_PT_race', 'D_PT_ethnic', 'D_PT_gender', '01Len', '01Dex', '01Bor', '01Melph', '01Cyclo']]
+df_clinical_covariates = df_clinical_covariates[['ecog', 'DEMOG_PATIENTAGE', 'DEMOG_HEIGHT', 'DEMOG_WEIGHT', 'D_PT_race', 'D_PT_ethnic', 'D_PT_gender', '01Len', '01Dex', '01Bor', '01Melph', '01Cyclo', 'time_since_diagnosis']]
 values = {'ecog':0, 'DEMOG_PATIENTAGE':0, 'DEMOG_HEIGHT':0, 'DEMOG_WEIGHT':0, 'D_PT_race':1.1, 'D_PT_ethnic':1.1, 'D_PT_gender':1.5}
 df_clinical_covariates = df_clinical_covariates.fillna(value=values)
 print("Number of clinical covariates including drug indicators:", len(df_clinical_covariates.columns))
+
+#print("Adding clinical covariates by EHR")
+#filename = './COMMPASS_data/220615_commpass_clinical_genomic_annotated_EHR.xlsx'
+#df_EHR = pd.read_excel(filename)
+##print(df_EHR.head(n=5))
+## Imputation of missing cases must be done after merging to see which patients were not included here
+#COMMPASS_current_name_list = [elem[0] for elem in training_instance_dict.values()]
+#EHR_name_list = [elem.replace("_1_BM" ,"", 1) for elem in df_EHR.loc[:,"sample"]]
+#print("\nCOMMPASS_current_name_list:\n", len(COMMPASS_current_name_list))
+#
+#print("\nEHR_name_list:\n", len(EHR_name_list))
+##print([(elem, (elem not in COMMPASS_current_name_list)) for elem in df_EHR.loc[:,"sample"]])
+##print([(elem not in COMMPASS_current_name_list) for elem in EHR_name_list])
+#print("How many from EHR not in current COMMPASS name list (due to inclusion criteria not being satisfied)\n:", sum([(elem not in COMMPASS_current_name_list) for elem in EHR_name_list]))
+#print("How many from current COMMPASS not in EHR name list:", sum([(elem not in EHR_name_list) for elem in COMMPASS_current_name_list]))
 
 ######################################################################
 # Save things
@@ -213,6 +239,17 @@ df_X_covariates = df_X_covariates.join(df_clinical_covariates)
 #df_X_covariates = df_clinical_covariates
 print("Total number of covariates in df_X:", len(df_X_covariates.columns))
 print(df_X_covariates.head(n=5))
+
+# EHR:
+#df_X_covariates = extracted_features_tsfresh.join(df_filter_covariates)
+#df_X_covariates = extracted_features_tsfresh.join(df_EHR, how='left', lsuffix='_left', rsuffix='_right')
+#df_X_covariates = df_X_covariates.join(df_clinical_covariates)
+#df_X_covariates = df_X_covariates.join(df_EHR)
+#df_X_covariates = df_clinical_covariates.join(df_EHR, how='left', lsuffix='_left', rsuffix='_right')
+#print("Impute for missing values in EHR's data until we can recompute them all")
+#df_X_covariates.fillna(df_X_covariates.mean())
+#print(df_X_covariates.isna().any())
+#print(df_X_covariates.columns[df_X_covariates.isna().any()].tolist())
 
 # Save dataframe X with covairates
 picklefile = open('./binaries_and_pickles/df_X_covariates', 'wb')

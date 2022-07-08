@@ -118,9 +118,9 @@ aic_c_values_3 = []
 sigma_estimates_model_1 = []
 sigma_estimates_model_2 = []
 sigma_estimates_model_3 = []
-chosen_models = []
+model_choice = []
 for training_instance_id in range(N_patients):
-    print("Patient", str(training_instance_id))
+    print("\nPatient", str(training_instance_id))
     if training_instance_id < N_patients/3: # First third of patients are HRD
         expected_pi_r = average_pi_r_HRD
     elif training_instance_id < N_patients*2/3: # Second third of patients are middle people
@@ -198,7 +198,8 @@ for training_instance_id in range(N_patients):
 
     # Model selection (1 2 or 3) by BIC. Then save outcomes
     bic_values_this_patient = bic_values_1[training_instance_id], bic_values_2[training_instance_id], bic_values_3[training_instance_id]
-    chosen_models.append(bic_values_this_patient.index(min(bic_values_this_patient)) + 1)
+    model_choice.append(bic_values_this_patient.index(min(bic_values_this_patient)) + 1)
+    print("Model choice:", model_choice[training_instance_id])
     # Enable selection by BIC, make get_binary_outcome and other learning functions handle "this_estimate" of different lengths, then fix the following instead of after model 3.
     #Y_parameters = np.concatenate((Y_parameters, np.array([this_estimate]))) # training_instance_id is position in Y_parameters
     #period_start = end_of_history
@@ -210,9 +211,7 @@ for training_instance_id in range(N_patients):
         plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=this_estimate, PLOT_ESTIMATES=True, plot_title="Simulated patient "+str(training_instance_id), savename="./plots/simulation_plots/patient_"+str(training_instance_id)+".png")
     end_time = time.time()
     time_duration = end_time - start_time
-    print("Time elapsed:", time_duration)
-
-print("Models chosen with BIC:\n", [(ii, chosen_models[ii]) for ii in range(len(chosen_models))])
+    print("Time elapsed: {:10.0f} seconds".format(time_duration))
 
 print("Negative loglikelihood:")
 print(negative_loglikelihoods_1)
@@ -223,6 +222,32 @@ print("BIC:")
 print(bic_values_1)
 print(bic_values_2)
 print(bic_values_3)
+
+#print("Models chosen with BIC:\n", [(ii, model_choice[ii]) for ii in range(len(model_choice))])
+print("Models chosen with BIC, group 1:\n", [model_choice[ii] for ii in range(0,group_2_start)])
+print("Models chosen with BIC, group 2:\n", [model_choice[ii] for ii in range(group_2_start, group_3_start)])
+print("Models chosen with BIC, group 3:\n", [model_choice[ii] for ii in range(group_3_start, len(model_choice))])
+
+# Save variables 
+picklefile = open('./binaries_and_pickles/df_X_covariates_simulation_study', 'wb')
+pickle.dump(np.array(df_X_covariates), picklefile)
+picklefile.close()
+
+picklefile = open('./binaries_and_pickles/Y_parameters_simulation_study', 'wb')
+pickle.dump(np.array(Y_parameters), picklefile)
+picklefile.close()
+
+picklefile = open('./binaries_and_pickles/Y_increase_or_not_simulation_study', 'wb')
+pickle.dump(Y_increase_or_not, picklefile)
+picklefile.close()
+
+picklefile = open('./binaries_and_pickles/patient_dictionary_simulation_study', 'wb')
+pickle.dump(patient_dictionary, picklefile)
+picklefile.close()
+
+picklefile = open('./binaries_and_pickles/model_choice', 'wb')
+pickle.dump(np.array(model_choice), picklefile)
+picklefile.close()
 
 # Plot estimated sigma values
 if N_patients <= 20:
@@ -470,7 +495,6 @@ plt.savefig("./plots/simulation_plots/model_comparison_bic_values_sigma_"+str(ob
 plt.show()
 plt.close()
 
-"""
 # Plot parameter estimates 
 # pi_r
 pi_r_estimates = [elem.pi_r for elem in Y_parameters]
@@ -486,7 +510,7 @@ plt.title("Estimated pi_R by least squares")
 ax.set_ylim(bottom=lb_3[1], top=ub_3[1])
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_plots/estimated_pi_R.png")
+plt.savefig("./plots/simulation_plots/estimated_pi_R_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # g_r
@@ -499,10 +523,10 @@ plt.plot(range(N_patients), g_r_estimates, marker="x", linestyle="", c="k", labe
 plt.xlabel("Patients")
 plt.ylabel("g_r: Resistant cell fraction")
 plt.title("Estimated g_r by least squares")
-ax.set_ylim(bottom=lb_3[2], top=ub_3[2])
+ax.set_ylim(bottom=min(g_r_estimates)*0.9, top=max(g_r_estimates)*1.1)
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_plots/estimated_g_r.png")
+plt.savefig("./plots/simulation_plots/estimated_g_r_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # g_s
@@ -518,7 +542,7 @@ plt.title("Estimated g_s by least squares")
 ax.set_ylim(bottom=lb_3[3], top=ub_3[3])
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_plots/estimated_g_s.png")
+plt.savefig("./plots/simulation_plots/estimated_g_s_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # k_1
@@ -534,7 +558,7 @@ plt.title("Estimated k_1 by least squares")
 ax.set_ylim(bottom=lb_3[4], top=ub_3[4])
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_plots/estimated_k_1.png")
+plt.savefig("./plots/simulation_plots/estimated_k_1_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # g_s - k_1
@@ -552,23 +576,5 @@ plt.title("Estimated (g_s - K) by least squares")
 ax.set_ylim(bottom=lb_3[3]-ub_3[4], top=0)
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_plots/estimated_g_s-K.png")
+plt.savefig("./plots/simulation_plots/estimated_g_s-K_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
-
-# Save variables 
-picklefile = open('./binaries_and_pickles/df_X_covariates_simulation_study', 'wb')
-pickle.dump(np.array(df_X_covariates), picklefile)
-picklefile.close()
-
-picklefile = open('./binaries_and_pickles/Y_parameters_simulation_study', 'wb')
-pickle.dump(np.array(Y_parameters), picklefile)
-picklefile.close()
-
-picklefile = open('./binaries_and_pickles/Y_increase_or_not_simulation_study', 'wb')
-pickle.dump(Y_increase_or_not, picklefile)
-picklefile.close()
-
-picklefile = open('./binaries_and_pickles/patient_dictionary_simulation_study', 'wb')
-pickle.dump(patient_dictionary, picklefile)
-picklefile.close()
-"""
