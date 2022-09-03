@@ -1,9 +1,6 @@
-# Simulation study 2
-# Define patients at baseline and simulate history
-# Extract covariates from history
+# Define patient group with parameters Y and covariates X
 # Simulate M protein data for each patient
-# Estimate Y parameters from the M protein data under observation period
-# Save parameter estimates and covariates 
+# Estimate Y parameters from the M protein data
 # The mapping between X and estimated Y is done in *learn_mapping and *binary_outcome
 from utilities import *
 warnings.simplefilter("ignore")
@@ -16,18 +13,65 @@ def get_minval_maxval(list_1, list_2, list_3, start_id, stop_id):
     minval = minval - 0.1*diff
     return minval, maxval
 
-N_patients = 26
+# Case 1: 
+N_patients_per_group = 34
+N_patients = N_patients_per_group * 3
 N_iter = 10000 # Number of independent starting points in parameter estimation
+# Three patient groups: Hyperdiploid (A), middle guys (C) and Non-hyperdiploid (B)
+# They have no history, and all patients get the same treatment for the same amount of days. The treatment is observed through all the interval.
+# a) HRD completely resistant, Non-HRD completely sensitive, middel people have 0.1 resistant cells 
+average_pi_r_HRD = 1
+average_pi_r_middle_group = 0.1
+average_pi_r_non_HRD = 0
+# b) Both groups partially resistant, but HRD more
+#average_pi_r_HRD = 1
+#average_pi_r_non_HRD = 0
+variance_in_pi_r_both_groups = 0
+observation_std_m_protein = 5 # sigma 
+
+Y_0_population = 50
+g_r_population = 0.002
+g_s_population = 0.010
+k_1_population = 0.015
+
+# Create the covariates X
+df_X_covariates = pd.DataFrame(
+    {"training_instance_id" : [ii for ii in range(N_patients)],
+    "HRD" : [0 for ii in range(N_patients)]}
+)
+df_X_covariates.loc[(df_X_covariates["training_instance_id"] < N_patients*2/3), "HRD"] = average_pi_r_middle_group
+df_X_covariates.loc[(df_X_covariates["training_instance_id"] < N_patients/3), "HRD"] = average_pi_r_HRD
+#df_drugs_and_dates.loc[(df_drugs_and_dates["MMTX_THERAPY"] == drug_name),'drug_id'] = drug_id
+#print(df_X_covariates.head(n=N_patients))
+picklefile = open('./binaries_and_pickles/df_X_covariates_simulation_study', 'wb')
+pickle.dump(np.array(df_X_covariates), picklefile)
+picklefile.close()
+print("Average HRD value:", np.mean(df_X_covariates["HRD"].head(n=N_patients)))
+
+group_2_start = int(N_patients/3)
+group_3_start = int(N_patients*2/3)
+
+# Create patients with M protein under treatment and estimate parameters Y, save them to outcome df
+"""
+For each training instance id: 
+Sample parameters that correspond to covariates
+Create a patient and generate M protein 
+Estimate parameters and add to Y_parameters df
+Add binary outcome to Y_increase_or_not
+"""
+
 # M protein measurement settings
 days_between_measurements = 180 # every X days
 number_of_measurements = 8 # for N*X days
-observation_std_m_protein = 0 # sigma 
+measurement_times = days_between_measurements * np.linspace(0, number_of_measurements, number_of_measurements+1)
 
-df_X_covariates = pd.DataFrame(
-    {"training_instance_id" : [ii for ii in range(N_patients)],
-    "Days since diagnosis" : [np.nan for ii in range(N_patients)]}
-)
-# covariate_names = .... column names in df_X_covariates without training_instance_id
+# Currently there is no history
+treatment_history = np.array([
+    Treatment(start=0, end=measurement_times[-1], id=1),
+    #Treatment(start=0, end=measurement_times[4], id=1),
+    #Treatment(start=measurement_times[4], end=measurement_times[8], id=0),
+    ])
+end_of_history = 0
 
 # Model 1: exp rho t            (3 parameters: Y0, rho, sigma)
 # Model 2: exp t(alpha - k)     (4 parameters: Y0, alpha, K, sigma)
@@ -56,24 +100,10 @@ print("bic_penalty_model_1:", bic_penalty_model_1)
 print("bic_penalty_model_2:", bic_penalty_model_2)
 print("bic_penalty_model_3:", bic_penalty_model_3)
 
-#1.1 Define patient parameters at time of diagnosis (beginning of history)
-g_r_population = 0.002
-g_s_population = 0.010
-k_1_population = 0.015
-initial_Y_0 = 50
-initial_pi_r = 0.01
-if initial_pi_r < lb_3[1]:
-    sys.exit("Lowest pi is lower than bound for model with 2 populations")
-variance_in_pi_r = 0
-patient_dictionary = {} # Stores full patients internally in this script 
-
-#1.2 Simulate history and get true parameters at treatment start
-# Create data frames to store estimated parameters and binary outcomes: 
-#   Y_parameters and Y_increase_or_not store the estimates from the full model 
-#   all_estimates stores the estimates from all three models
-#   model_choice stores model choice
-all_estimates = {}
-true_parameters = []
+# Define patient parameters and measure M protein
+# Create Y df for parameters and binary outcomes 
+print("Estimating parameters...")
+patient_dictionary = {}
 Y_parameters = np.array([])
 Y_increase_or_not = np.array([])
 negative_loglikelihoods_1 = []
@@ -92,59 +122,21 @@ sigma_estimates_model_1 = []
 sigma_estimates_model_2 = []
 sigma_estimates_model_3 = []
 model_choice = []
-chosen_estimates = []
-print("Estimating parameters...")
-"""
-For each training instance id: 
-Define parameters at diagnosis, history, and period of interest
-Find true parameters at start of period of interest
-Extract/define parameters
-Generate M protein under period of interest
-Estimate parameters under period of interest and add to Y_parameters df
-Add binary outcome to Y_increase_or_not
-"""
 for training_instance_id in range(N_patients):
-    print("\n   Patient", str(training_instance_id))
-    # Parameters at diagnosis
-    parameters_at_diagnosis = Parameters(Y_0=initial_Y_0, pi_r=initial_pi_r, g_r=g_r_population, g_s=g_s_population, k_1=k_1_population, sigma=observation_std_m_protein)
-    days_before_treatment_of_interest = 50*training_instance_id # days equal to patient id 
-    treatment_of_interest_index = -1 # index in full_treatment_history
-    
-    # Measurement times under the treatment of interest (All time points are relative to the date of diagnosis)
-    measurement_times_under_treatment_of_interest = days_before_treatment_of_interest + days_between_measurements * np.linspace(0, number_of_measurements, number_of_measurements+1)
-
-    # Full history includes final treatment where we measure M protein. One entry here means that there is no history
-    full_treatment_history = np.array([
-        Treatment(start=0, end=days_before_treatment_of_interest, id=1),
-        Treatment(start=days_before_treatment_of_interest, end=measurement_times_under_treatment_of_interest[-1], id=1),
-        ])
-    treatment_of_interest = full_treatment_history[treatment_of_interest_index]
-    treatments_before_treatment_of_interest = full_treatment_history[0:treatment_of_interest_index]
-
-    duration_of_treatment_of_interest = treatment_of_interest.end - treatment_of_interest.start
-
-    # Parameters at the start of treatment of interest 
-    M_protein_at_treatment_of_interest_start, pi_at_treatment_of_interest_start = get_pi_r_after_time_has_passed(params=parameters_at_diagnosis, measurement_times=np.array([treatment_of_interest.start]), treatment_history=treatments_before_treatment_of_interest)
-    print("M_protein_at_treatment_of_interest_start:", M_protein_at_treatment_of_interest_start)
-    print("pi_at_treatment_of_interest_start:", pi_at_treatment_of_interest_start)
-    parameters_at_treatment_of_interest_start = Parameters(Y_0=M_protein_at_treatment_of_interest_start, pi_r=pi_at_treatment_of_interest_start, g_r=g_r_population, g_s=g_s_population, k_1=k_1_population, sigma=observation_std_m_protein)
-    true_parameters.append(parameters_at_treatment_of_interest_start)
-    # Define/Extract covariates from history before treatment of interest 
-
-    these_covariates = [days_before_treatment_of_interest]
-    df_X_covariates.loc[training_instance_id, "Days since diagnosis"] = days_before_treatment_of_interest
-
-    # Everything in a patient object is relative to a defined treatment of interest
-    # M protein under period of interest is measured automatically when patient is instanciated
-    this_patient = Patient(parameters_at_treatment_of_interest_start, measurement_times_under_treatment_of_interest, treatment_history=np.array([treatment_of_interest]), name=str(training_instance_id), covariates = these_covariates)
+    print("\nPatient", str(training_instance_id))
+    if training_instance_id < N_patients/3: # First third of patients are HRD
+        expected_pi_r = average_pi_r_HRD
+    elif training_instance_id < N_patients*2/3: # Second third of patients are middle people
+        expected_pi_r = average_pi_r_middle_group
+    else: # Last third of patients are non-HRD
+        expected_pi_r = average_pi_r_non_HRD
+    these_parameters = Parameters(Y_0=Y_0_population, pi_r=expected_pi_r, g_r=g_r_population, g_s=g_s_population, k_1=k_1_population, sigma=observation_std_m_protein)
+    this_patient = Patient(these_parameters, measurement_times, treatment_history, name=str(training_instance_id))
     patient_dictionary[training_instance_id] = this_patient
 
-    # Estimate parameters Y at treatment start, for models 1,2,3. Save the best estimate to outcome df, which will have some nan or bogus entries. 
-    ########################################################################
     # Estimate parameters for model 1
     # Model 1: exp rho t            (2+1=3 parameters: Y0, rho, sigma)
     this_estimate = estimate_drug_response_parameters_any_model(this_patient, lb_1, ub_1, N_iterations=N_iter) #, sigma_noise_std=1
-    estimate_model_1 = this_estimate
     array_x = np.array([this_estimate.Y_0, this_estimate.g_r, this_estimate.sigma])
     predictions = measure_Mprotein_noiseless(this_estimate, this_patient.measurement_times, this_patient.treatment_history)
     sumofsquares_model_1 = np.sum((this_patient.Mprotein_values - predictions)**2)
@@ -156,7 +148,6 @@ for training_instance_id in range(N_patients):
     # Estimate parameters for model 2
     # Model 2: exp t(alpha - k)     (3+1=4 parameters: Y0, alpha, K, sigma)
     this_estimate = estimate_drug_response_parameters_any_model(this_patient, lb_2, ub_2, N_iterations=N_iter) #, sigma_noise_std=1
-    estimate_model_2 = this_estimate
     array_x = np.array([this_estimate.Y_0, this_estimate.g_s, this_estimate.k_1, this_estimate.sigma])
     predictions = measure_Mprotein_noiseless(this_estimate, this_patient.measurement_times, this_patient.treatment_history)
     sumofsquares_model_2 = np.sum((this_patient.Mprotein_values - predictions)**2)
@@ -168,9 +159,8 @@ for training_instance_id in range(N_patients):
     # Estimate parameters for model 3
     # Model 3: Both together.       (5+1=6 parameters: Y0, pi, rho, alpha, K, sigma)
     this_estimate = estimate_drug_response_parameters_any_model(this_patient, lb_3, ub_3, N_iterations=N_iter) #, sigma_noise_std=1
-    estimate_model_3 = this_estimate
     Y_parameters = np.concatenate((Y_parameters, np.array([this_estimate]))) # training_instance_id is position in Y_parameters
-    period_start = treatment_of_interest.start
+    period_start = end_of_history
     binary_outcome = get_binary_outcome(period_start, this_patient, this_estimate)
     Y_increase_or_not = np.concatenate((Y_increase_or_not, np.array([binary_outcome])))
     array_x = np.array([this_estimate.Y_0, this_estimate.pi_r, this_estimate.g_r, this_estimate.g_s, this_estimate.k_1, this_estimate.sigma])
@@ -181,17 +171,15 @@ for training_instance_id in range(N_patients):
     #print(negative_loglikelihoods_3[training_instance_id])
     sigma_estimates_model_3.append(array_x[-1])
 
-    all_estimates[training_instance_id] = [estimate_model_1, estimate_model_2, estimate_model_3]
-
     N_observations_this_period = len(this_patient.measurement_times)
     # BIC values: k*ln(N) + 2*negative loglikelihood
     bic_values_1.append(len(lb_1)*np.log(N_observations_this_period) + 2*negative_loglikelihoods_1[training_instance_id])
     bic_values_2.append(len(lb_2)*np.log(N_observations_this_period) + 2*negative_loglikelihoods_2[training_instance_id])
     bic_values_3.append(len(lb_3)*np.log(N_observations_this_period) + 2*negative_loglikelihoods_3[training_instance_id])
-    #print("BIC")
-    #print(bic_values_1[training_instance_id])
-    #print(bic_values_2[training_instance_id])
-    #print(bic_values_3[training_instance_id])
+    print("BIC")
+    print(bic_values_1[training_instance_id])
+    print(bic_values_2[training_instance_id])
+    print(bic_values_3[training_instance_id])
 
     # AIC values: 2*k + 2*negative loglikelihood
     aic_values_1.append(2*len(lb_1) + 2*negative_loglikelihoods_1[training_instance_id])
@@ -213,19 +201,20 @@ for training_instance_id in range(N_patients):
 
     # Model selection (1 2 or 3) by BIC. Then save outcomes
     bic_values_this_patient = bic_values_1[training_instance_id], bic_values_2[training_instance_id], bic_values_3[training_instance_id]
-    this_model_choice = bic_values_this_patient.index(min(bic_values_this_patient)) + 1
-    model_choice.append(this_model_choice)
-    chosen_estimates.append(all_estimates[training_instance_id][this_model_choice - 1])
-    print("Estimated pi:", chosen_estimates[training_instance_id].pi_r)
+    model_choice.append(bic_values_this_patient.index(min(bic_values_this_patient)) + 1)
     print("Model choice:", model_choice[training_instance_id])
+    # Enable selection by BIC, make get_binary_outcome and other learning functions handle "this_estimate" of different lengths, then fix the following instead of after model 3.
+    #Y_parameters = np.concatenate((Y_parameters, np.array([this_estimate]))) # training_instance_id is position in Y_parameters
+    #period_start = end_of_history
+    #binary_outcome = get_binary_outcome(period_start, this_patient, this_estimate)
+    #Y_increase_or_not = np.concatenate((Y_increase_or_not, np.array([binary_outcome])))
 
     # Plot truth and estimates
-    if True: # training_instance_id in [0, 1, 2]:
-        plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_at_treatment_of_interest_start, this_patient, estimated_parameters=this_estimate, PLOT_ESTIMATES=True, plot_title="Simulated patient "+str(training_instance_id), savename="./plots/simulation_study_2_plots/patient_"+str(training_instance_id)+".png")
+    if training_instance_id in [0, group_2_start, group_3_start]:
+        plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=this_estimate, PLOT_ESTIMATES=True, plot_title="Simulated patient "+str(training_instance_id), savename="./plots/simulation_plots/patient_"+str(training_instance_id)+".png")
     end_time = time.time()
     time_duration = end_time - start_time
-    #print("Time elapsed: {:10.0f} seconds".format(time_duration))
-    # Done with making history, covariate, and estimates of parameters. Finding effect of covariate on parameters at treatment start is done in learn_mapping_simulated_study.py
+    print("Time elapsed: {:10.0f} seconds".format(time_duration))
 
 print("Negative loglikelihood:")
 print(negative_loglikelihoods_1)
@@ -237,49 +226,27 @@ print(bic_values_1)
 print(bic_values_2)
 print(bic_values_3)
 
-print("Model choices:")
-print([(a,b) for a,b in enumerate(model_choice)])
-
-# How many chosen for each model type: 
-print("How many times was model 1 chosen:\n", sum([elem == 1 for elem in model_choice]))
-print("How many times was model 2 chosen:\n", sum([elem == 2 for elem in model_choice]))
-print("How many times was model 3 chosen:\n", sum([elem == 3 for elem in model_choice]))
+#print("Models chosen with BIC:\n", [(ii, model_choice[ii]) for ii in range(len(model_choice))])
+print("Models chosen with BIC, group 1:\n", [model_choice[ii] for ii in range(0,group_2_start)])
+print("Models chosen with BIC, group 2:\n", [model_choice[ii] for ii in range(group_2_start, group_3_start)])
+print("Models chosen with BIC, group 3:\n", [model_choice[ii] for ii in range(group_3_start, len(model_choice))])
 
 # Save variables 
-picklefile = open('./binaries_and_pickles/df_X_covariates_simulation_study_version_2', 'wb')
-pickle.dump(np.array(df_X_covariates), picklefile)
-picklefile.close()
-
-picklefile = open('./binaries_and_pickles/Y_parameters_simulation_study_version_2', 'wb')
+picklefile = open('./binaries_and_pickles/Y_parameters_simulation_study', 'wb')
 pickle.dump(np.array(Y_parameters), picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/Y_increase_or_not_simulation_study_version_2', 'wb')
+picklefile = open('./binaries_and_pickles/Y_increase_or_not_simulation_study', 'wb')
 pickle.dump(Y_increase_or_not, picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/patient_dictionary_simulation_study_version_2', 'wb')
+picklefile = open('./binaries_and_pickles/patient_dictionary_simulation_study', 'wb')
 pickle.dump(patient_dictionary, picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/model_choice_version_2', 'wb')
+picklefile = open('./binaries_and_pickles/model_choice', 'wb')
 pickle.dump(np.array(model_choice), picklefile)
 picklefile.close()
-
-picklefile = open('./binaries_and_pickles/all_estimates_version_2', 'wb')
-pickle.dump(all_estimates, picklefile)
-picklefile.close()
-
-picklefile = open('./binaries_and_pickles/chosen_estimates_version_2', 'wb')
-pickle.dump(np.array(chosen_estimates), picklefile)
-picklefile.close()
-
-picklefile = open('./binaries_and_pickles/true_parameters_version_2', 'wb')
-pickle.dump(np.array(true_parameters), picklefile)
-picklefile.close()
-
-group_2_start = 0 #model_choice.index(2)
-group_3_start = 0 #model_choice.index(3)
 
 # Plot estimated sigma values
 if N_patients <= 20:
@@ -288,8 +255,8 @@ else:
     fig = plt.figure(figsize=(15, 6))
 ax1 = fig.add_subplot(111)
 ax1.axhline(observation_std_m_protein, color="k", label="True sigma", zorder=-5)
-#ax1.axvline(group_2_start-0.5, linestyle="--", color="gray", label="Group 2 start", zorder=-5)
-#ax1.axvline(group_3_start-0.5, linestyle="--", color="gray", label="Group 3 start", zorder=-5)
+ax1.axvline(group_2_start-0.5, linestyle="--", color="gray", label="Group 2 start", zorder=-5)
+ax1.axvline(group_3_start-0.5, linestyle="--", color="gray", label="Group 3 start", zorder=-5)
 ax1.scatter(range(N_patients),sigma_estimates_model_1, color="r", label="Model 1: Only resistant")
 ax1.scatter(range(N_patients),sigma_estimates_model_2, color="b", label="Model 2: Only sensitive")
 ax1.scatter(range(N_patients),sigma_estimates_model_3, color="g", label="Model 3: Full model")
@@ -300,11 +267,10 @@ ax1.set_ylabel("Estimated sigma")
 ax1.set_title("Estimated sigma for the three models")
 plt.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_2_plots/model_comparison_sigma_estimates_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+plt.savefig("./plots/simulation_plots/model_comparison_sigma_estimates_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 plt.show()
 plt.close()
 
-"""
 # Plot loglikelihoods
 fig = plt.figure(figsize=(18, 6))
 ax1 = fig.add_subplot(131)
@@ -356,7 +322,7 @@ ax3.set_title("Sensitive patients")
 ax3.legend(loc="best")
 plt.suptitle("Negative loglikelihood")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_2_plots/model_comparison_loglikelihood_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+plt.savefig("./plots/simulation_plots/model_comparison_loglikelihood_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 #plt.show()
 plt.close()
 
@@ -412,7 +378,7 @@ ax3.legend(loc="best")
 
 plt.suptitle("AIC")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_2_plots/model_comparison_aic_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+plt.savefig("./plots/simulation_plots/model_comparison_aic_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 #plt.show()
 plt.close()
 
@@ -468,7 +434,7 @@ ax3.legend(loc="best")
 
 plt.suptitle("Second order AIC")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_2_plots/model_comparison_aic_c_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+plt.savefig("./plots/simulation_plots/model_comparison_aic_c_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 #plt.show()
 plt.close()
 
@@ -524,7 +490,7 @@ ax3.legend(loc="best")
 
 plt.suptitle("BIC")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_2_plots/model_comparison_bic_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+plt.savefig("./plots/simulation_plots/model_comparison_bic_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 plt.show()
 plt.close()
 
@@ -544,7 +510,7 @@ plt.title("Estimated pi_R by least squares")
 ax.set_ylim(bottom=-0.05, top=1.05) #bottom=lb_3[1], top=ub_3[1])
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_2_plots/estimated_pi_R_sigma_"+str(observation_std_m_protein)+".png")
+plt.savefig("./plots/simulation_plots/estimated_pi_R_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # g_r
@@ -560,7 +526,7 @@ plt.title("Estimated g_r by least squares")
 ax.set_ylim(bottom=min(g_r_estimates)*0.9, top=max(g_r_estimates)*1.1)
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_2_plots/estimated_g_r_sigma_"+str(observation_std_m_protein)+".png")
+plt.savefig("./plots/simulation_plots/estimated_g_r_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # g_s
@@ -576,7 +542,7 @@ plt.title("Estimated g_s by least squares")
 ax.set_ylim(bottom=lb_3[3], top=ub_3[3])
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_2_plots/estimated_g_s_sigma_"+str(observation_std_m_protein)+".png")
+plt.savefig("./plots/simulation_plots/estimated_g_s_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # k_1
@@ -592,7 +558,7 @@ plt.title("Estimated k_1 by least squares")
 ax.set_ylim(bottom=lb_3[4], top=ub_3[4])
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_2_plots/estimated_k_1_sigma_"+str(observation_std_m_protein)+".png")
+plt.savefig("./plots/simulation_plots/estimated_k_1_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # g_s - k_1
@@ -610,6 +576,5 @@ plt.title("Estimated (g_s - K) by least squares")
 ax.set_ylim(bottom=lb_3[3]-ub_3[4], top=0)
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_2_plots/estimated_g_s-K_sigma_"+str(observation_std_m_protein)+".png")
+plt.savefig("./plots/simulation_plots/estimated_g_s-K_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
-"""

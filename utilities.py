@@ -153,6 +153,8 @@ class Patient:
         return self.treatment_history
     def get_Mprotein_values(self):
         return self.Mprotein_values
+    def get_covariates(self):
+        return self.covariates
 
 class COMMPASS_Patient: 
     def __init__(self, measurement_times, drug_dates, drug_history, treatment_history, Mprotein_values, Kappa_values, Lambda_values, covariates, name):
@@ -276,8 +278,7 @@ def generate_resistant_Mprotein(Y_t, params, delta_T_values, drug_effect):
 def generate_sensitive_Mprotein(Y_t, params, delta_T_values, drug_effect):
     return Y_t * (1-params.pi_r) * np.exp((params.g_s - drug_effect) * delta_T_values)
 
-# Input: a Parameter object, a numpy array of time points in days, a list of back-to-back Treatment objects
-def measure_Mprotein_noiseless(params, measurement_times, treatment_history):
+def get_pi_r_after_time_has_passed(params, measurement_times, treatment_history):
     Mprotein_values = np.zeros_like(measurement_times)
     # Adding a small epsilon to Y and pi_r to improve numerical stability
     epsilon_value = 1e-15
@@ -316,6 +317,11 @@ def measure_Mprotein_noiseless(params, measurement_times, treatment_history):
         Y_t = recorded_and_endtime_mprotein_values[-1]# + epsilon_value
         pi_r_t = resistant_mprotein[-1] / (resistant_mprotein[-1] + sensitive_mprotein[-1] + epsilon_value) # Add a small number to keep numerics ok
         t_params = Parameters(Y_t, pi_r_t, t_params.g_r, t_params.g_s, t_params.k_1, t_params.sigma)
+    return Mprotein_values, pi_r_t
+
+# Input: a Parameter object, a numpy array of time points in days, a list of back-to-back Treatment objects
+def measure_Mprotein_noiseless(params, measurement_times, treatment_history):
+    Mprotein_values, pi_r_after_time_has_passed = get_pi_r_after_time_has_passed(params, measurement_times, treatment_history)
     return Mprotein_values
 
 # Input: a Parameter object, a numpy array of time points in days, a list of back-to-back Treatment objects
@@ -698,10 +704,10 @@ def estimate_drug_response_parameters_any_model(patient, lb, ub, N_iterations=10
 
     # Model 1: exp rho t            (2+1=3 parameters: Y0, rho, sigma)
     if len(lb) == 3:
-        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=1-PI_LB, g_r=best_x[1], g_s=GROWTH_LB, k_1=0, sigma=best_x[2])
+        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=1, g_r=best_x[1], g_s=GROWTH_LB, k_1=0, sigma=best_x[2])
     # Model 2: exp t(alpha - k)     (3+1=4 parameters: Y0, alpha, K, sigma)
     elif len(best_x) == 4:
-        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=PI_LB, g_r=GROWTH_LB, g_s=best_x[1], k_1=best_x[2], sigma=best_x[3])
+        Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=0, g_r=GROWTH_LB, g_s=best_x[1], k_1=best_x[2], sigma=best_x[3])
     # Model 3: Both together.       (5+1=6 parameters: Y0, pi, rho, alpha, K, sigma)
     elif len(best_x) == 6:
         Parameter_object_x = Parameters(Y_0=best_x[0], pi_r=best_x[1], g_r=best_x[2], g_s=best_x[3], k_1=best_x[4], sigma=best_x[5])
