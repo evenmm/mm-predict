@@ -1,4 +1,4 @@
-# Simulation study 3
+# Simulation study 2
 # Define patients at baseline and simulate history
 # Extract covariates from history
 # Simulate M protein data for each patient
@@ -16,7 +16,7 @@ def get_minval_maxval(list_1, list_2, list_3, start_id, stop_id):
     minval = minval - 0.1*diff
     return minval, maxval
 
-N_patients = 52
+N_patients = 26
 N_iter = 10000 # Number of independent starting points in parameter estimation
 # M protein measurement settings
 days_between_measurements = 60 # every X days
@@ -25,14 +25,9 @@ observation_std_m_protein = 0 # sigma
 
 df_X_covariates = pd.DataFrame(
     {"training_instance_id" : [ii for ii in range(N_patients)],
-    "Days since diagnosis" : [np.nan for ii in range(N_patients)],
-    "gene_expression_X" : [np.nan for ii in range(N_patients)],
-    }
+    "Days since diagnosis" : [np.nan for ii in range(N_patients)]}
 )
-covariate_names = np.array(df_X_covariates.drop(columns="training_instance_id").columns)
-picklefile = open('./binaries_and_pickles/covariate_names_simulation_study_3', 'wb')
-pickle.dump(covariate_names, picklefile)
-picklefile.close()
+# covariate_names = .... column names in df_X_covariates without training_instance_id
 
 # Model 1: exp rho t            (3 parameters: Y0, rho, sigma)
 # Model 2: exp t(alpha - k)     (4 parameters: Y0, alpha, K, sigma)
@@ -111,16 +106,8 @@ Add binary outcome to Y_increase_or_not
 for training_instance_id in range(N_patients):
     print("\n   Patient", str(training_instance_id))
     # Parameters at diagnosis
-    max_deviation = np.sqrt(0.8*(k_1_population - g_s_population))
-    gene_expression_X = np.random.uniform(-max_deviation, max_deviation) #np.random.normal(loc=0.0, scale=10*g_s_population)
-    g_s_patient_i = g_s_population + gene_expression_X**2
-    #gene_expression_X = 0.8*(k_1_population - g_s_population) * np.sqrt(np.random.uniform(0,1)) #np.random.normal(loc=0.0, scale=10*g_s_population)
-    #g_s_patient_i = g_s_population + gene_expression_X
-    parameters_at_diagnosis = Parameters(Y_0=initial_Y_0, pi_r=initial_pi_r, g_r=g_r_population, g_s=g_s_patient_i, k_1=k_1_population, sigma=observation_std_m_protein)
-    g_r_i, g_s_i, k_1_i = parameters_at_diagnosis.g_r, parameters_at_diagnosis.g_s, parameters_at_diagnosis.k_1
-    print("g_r_i, g_s_i, k_1_i:", g_r_i, g_s_i, k_1_i)
-    days_before_treatment_of_interest = 8*training_instance_id # days equal to patient id 
-    # For two groups: days_before_treatment_of_interest = (16*training_instance_id) % 26 # 16*id days for id up to 26, then 16*id days again for next group
+    parameters_at_diagnosis = Parameters(Y_0=initial_Y_0, pi_r=initial_pi_r, g_r=g_r_population, g_s=g_s_population, k_1=k_1_population, sigma=observation_std_m_protein)
+    days_before_treatment_of_interest = 16*training_instance_id # days equal to patient id 
     treatment_of_interest_index = -1 # index in full_treatment_history
     
     # Measurement times under the treatment of interest (All time points are relative to the date of diagnosis)
@@ -135,7 +122,7 @@ for training_instance_id in range(N_patients):
     treatments_before_treatment_of_interest = full_treatment_history[0:treatment_of_interest_index]
 
     at_diagnosis_patient = Patient(parameters_at_diagnosis, measurement_times_under_treatment_of_interest, treatment_history=full_treatment_history, name=str(training_instance_id))
-    plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_at_diagnosis, at_diagnosis_patient, PLOT_ESTIMATES=False, plot_title="Simulated patient "+str(training_instance_id), savename="./plots/simulation_study_3_plots/Full_history_patient_"+str(training_instance_id)+".png")
+    plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_at_diagnosis, at_diagnosis_patient, PLOT_ESTIMATES=False, plot_title="Simulated patient "+str(training_instance_id), savename="./plots/simulation_study_2_plots/Full_history_patient_"+str(training_instance_id)+".png")
 
     duration_of_treatment_of_interest = treatment_of_interest.end - treatment_of_interest.start
 
@@ -143,13 +130,12 @@ for training_instance_id in range(N_patients):
     M_protein_at_treatment_of_interest_start, pi_at_treatment_of_interest_start = get_pi_r_after_time_has_passed(params=parameters_at_diagnosis, measurement_times=np.array([treatment_of_interest.start]), treatment_history=treatments_before_treatment_of_interest)
     print("M_protein_at_treatment_of_interest_start:", M_protein_at_treatment_of_interest_start)
     print("pi_at_treatment_of_interest_start:", pi_at_treatment_of_interest_start)
-    parameters_at_treatment_of_interest_start = Parameters(Y_0=M_protein_at_treatment_of_interest_start, pi_r=pi_at_treatment_of_interest_start, g_r=g_r_i, g_s=g_s_i, k_1=k_1_i, sigma=observation_std_m_protein)
+    parameters_at_treatment_of_interest_start = Parameters(Y_0=M_protein_at_treatment_of_interest_start, pi_r=pi_at_treatment_of_interest_start, g_r=g_r_population, g_s=g_s_population, k_1=k_1_population, sigma=observation_std_m_protein)
     true_parameters.append(parameters_at_treatment_of_interest_start)
-
     # Define/Extract covariates from history before treatment of interest 
+
     these_covariates = [days_before_treatment_of_interest]
     df_X_covariates.loc[training_instance_id, "Days since diagnosis"] = days_before_treatment_of_interest
-    df_X_covariates.loc[training_instance_id, "gene_expression_X"] = gene_expression_X # NOT g_s_patient_i!!!
 
     # Everything in a patient object is relative to a defined treatment of interest
     # M protein under period of interest is measured automatically when patient is instanciated
@@ -238,7 +224,7 @@ for training_instance_id in range(N_patients):
 
     # Plot truth and estimates
     if True: # training_instance_id in [0, 1, 2]:
-        plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_at_treatment_of_interest_start, this_patient, estimated_parameters=this_estimate, PLOT_ESTIMATES=True, plot_title="Simulated patient "+str(training_instance_id), savename="./plots/simulation_study_3_plots/patient_"+str(training_instance_id)+".png")
+        plot_true_mprotein_with_observations_and_treatments_and_estimate(parameters_at_treatment_of_interest_start, this_patient, estimated_parameters=this_estimate, PLOT_ESTIMATES=True, plot_title="Simulated patient "+str(training_instance_id), savename="./plots/simulation_study_2_plots/patient_"+str(training_instance_id)+".png")
     end_time = time.time()
     time_duration = end_time - start_time
     #print("Time elapsed: {:10.0f} seconds".format(time_duration))
@@ -263,35 +249,35 @@ print("How many times was model 2 chosen:\n", sum([elem == 2 for elem in model_c
 print("How many times was model 3 chosen:\n", sum([elem == 3 for elem in model_choice]))
 
 # Save variables 
-picklefile = open('./binaries_and_pickles/df_X_covariates_simulation_study_3', 'wb')
+picklefile = open('./binaries_and_pickles/df_X_covariates_simulation_study_version_2', 'wb')
 pickle.dump(np.array(df_X_covariates), picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/Y_parameters_simulation_study_3', 'wb')
+picklefile = open('./binaries_and_pickles/Y_parameters_simulation_study_version_2', 'wb')
 pickle.dump(np.array(Y_parameters), picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/Y_increase_or_not_simulation_study_3', 'wb')
+picklefile = open('./binaries_and_pickles/Y_increase_or_not_simulation_study_version_2', 'wb')
 pickle.dump(Y_increase_or_not, picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/patient_dictionary_simulation_study_3', 'wb')
+picklefile = open('./binaries_and_pickles/patient_dictionary_simulation_study_version_2', 'wb')
 pickle.dump(patient_dictionary, picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/model_choice_simulation_study_3', 'wb')
+picklefile = open('./binaries_and_pickles/model_choice_version_2', 'wb')
 pickle.dump(np.array(model_choice), picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/all_estimates_simulation_study_3', 'wb')
+picklefile = open('./binaries_and_pickles/all_estimates_version_2', 'wb')
 pickle.dump(all_estimates, picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/chosen_estimates_simulation_study_3', 'wb')
+picklefile = open('./binaries_and_pickles/chosen_estimates_version_2', 'wb')
 pickle.dump(np.array(chosen_estimates), picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/true_parameters_simulation_study_3', 'wb')
+picklefile = open('./binaries_and_pickles/true_parameters_version_2', 'wb')
 pickle.dump(np.array(true_parameters), picklefile)
 picklefile.close()
 
@@ -317,7 +303,7 @@ ax1.set_ylabel("Estimated sigma")
 ax1.set_title("Estimated sigma for the three models")
 plt.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_3_plots/model_comparison_sigma_estimates_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+plt.savefig("./plots/simulation_study_2_plots/model_comparison_sigma_estimates_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 plt.show()
 plt.close()
 
@@ -373,7 +359,7 @@ ax3.set_title("Sensitive patients")
 ax3.legend(loc="best")
 plt.suptitle("Negative loglikelihood")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_3_plots/model_comparison_loglikelihood_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+plt.savefig("./plots/simulation_study_2_plots/model_comparison_loglikelihood_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 #plt.show()
 plt.close()
 
@@ -429,7 +415,7 @@ ax3.legend(loc="best")
 
 plt.suptitle("AIC")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_3_plots/model_comparison_aic_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+plt.savefig("./plots/simulation_study_2_plots/model_comparison_aic_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 #plt.show()
 plt.close()
 
@@ -485,7 +471,7 @@ ax3.legend(loc="best")
 
 plt.suptitle("Second order AIC")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_3_plots/model_comparison_aic_c_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+plt.savefig("./plots/simulation_study_2_plots/model_comparison_aic_c_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 #plt.show()
 plt.close()
 
@@ -541,7 +527,7 @@ ax3.legend(loc="best")
 
 plt.suptitle("BIC")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_3_plots/model_comparison_bic_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
+plt.savefig("./plots/simulation_study_2_plots/model_comparison_bic_values_sigma_"+str(observation_std_m_protein)+"_"+str(N_iter)+"_iterations_"+str(N_patients)+"_patients.png")
 plt.show()
 plt.close()
 
@@ -561,7 +547,7 @@ plt.title("Estimated pi_R by least squares")
 ax.set_ylim(bottom=-0.05, top=1.05) #bottom=lb_3[1], top=ub_3[1])
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_3_plots/estimated_pi_R_sigma_"+str(observation_std_m_protein)+".png")
+plt.savefig("./plots/simulation_study_2_plots/estimated_pi_R_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # g_r
@@ -577,7 +563,7 @@ plt.title("Estimated g_r by least squares")
 ax.set_ylim(bottom=min(g_r_estimates)*0.9, top=max(g_r_estimates)*1.1)
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_3_plots/estimated_g_r_sigma_"+str(observation_std_m_protein)+".png")
+plt.savefig("./plots/simulation_study_2_plots/estimated_g_r_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # g_s
@@ -593,7 +579,7 @@ plt.title("Estimated g_s by least squares")
 ax.set_ylim(bottom=lb_3[3], top=ub_3[3])
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_3_plots/estimated_g_s_sigma_"+str(observation_std_m_protein)+".png")
+plt.savefig("./plots/simulation_study_2_plots/estimated_g_s_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # k_1
@@ -609,7 +595,7 @@ plt.title("Estimated k_1 by least squares")
 ax.set_ylim(bottom=lb_3[4], top=ub_3[4])
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_3_plots/estimated_k_1_sigma_"+str(observation_std_m_protein)+".png")
+plt.savefig("./plots/simulation_study_2_plots/estimated_k_1_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 
 # g_s - k_1
@@ -627,6 +613,6 @@ plt.title("Estimated (g_s - K) by least squares")
 ax.set_ylim(bottom=lb_3[3]-ub_3[4], top=0)
 ax.legend(loc="best")
 plt.tight_layout()
-plt.savefig("./plots/simulation_study_3_plots/estimated_g_s-K_sigma_"+str(observation_std_m_protein)+".png")
+plt.savefig("./plots/simulation_study_2_plots/estimated_g_s-K_sigma_"+str(observation_std_m_protein)+".png")
 plt.show()
 """

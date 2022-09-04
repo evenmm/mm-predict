@@ -16,7 +16,7 @@ import seaborn as sns
 
 def isNaN(string):
     return string != string
-def Sort(sub_li):
+def Sort(sub_li): # Sorts a list of sublists on the second element in the list 
     return(sorted(sub_li, key = lambda x: x[1]))
 
 s = 25 # scatter plot object size
@@ -388,6 +388,9 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
     ax2 = ax1.twinx() 
     for treat_index in range(len(treatment_history)):
         this_treatment = treatment_history[treat_index]
+        # Adaptation made to simulation study 2:
+        if treat_index>0:
+            ax1.axvline(this_treatment.start, color="k", linewidth=1, linestyle="-", label="Start of period of interest")
         if this_treatment.id != 0:
             treatment_duration = this_treatment.end - this_treatment.start
             if this_treatment.id > maxdrugkey:
