@@ -43,7 +43,7 @@ print("true_beta_rho_r: ", true_beta_rho_r)
 print("true_beta_pi_r: ", true_beta_pi_r)
 
 days_between_measurements = 300
-number_of_measurements = 5
+number_of_measurements = 3
 measurement_times = days_between_measurements * np.linspace(0, number_of_measurements, number_of_measurements+1)
 treatment_history = np.array([Treatment(start=0, end=measurement_times[-1], id=1)])
 
@@ -51,10 +51,6 @@ expected_theta_1 = np.reshape(true_alpha[0] + np.dot(X, true_beta_rho_s), (N_pat
 expected_theta_2 = np.reshape(true_alpha[1] + np.dot(X, true_beta_rho_r), (N_patients,1))
 expected_theta_3 = np.reshape(true_alpha[2] + np.dot(X, true_beta_pi_r), (N_patients,1))
 
-# Deterministic
-#true_theta_rho_s = expected_theta_1
-#true_theta_rho_r = expected_theta_2
-#true_theta_pi_r  = expected_theta_3
 # Patient specific noise / deviation from X effects
 true_theta_rho_s = np.random.normal(expected_theta_1, true_omega[0])
 true_theta_rho_r = np.random.normal(expected_theta_2, true_omega[1])
@@ -75,17 +71,7 @@ for training_instance_id in range(N_patients):
     this_patient = Patient(these_parameters, measurement_times, treatment_history, name=str(training_instance_id))
     patient_dictionary[training_instance_id] = this_patient
     #plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=str(training_instance_id), savename="./plots/Bayes_simulated_data/"+str(training_instance_id))
-#print("true_theta_rho_s:\n", true_theta_rho_s)
-#print("true_theta_rho_r:\n", true_theta_rho_r)
-#print("true_theta_pi_r:\n", true_theta_pi_r)
-#print("\ntrue_rho_s:\n", true_rho_s)
-#print("true_rho_r:\n", true_rho_r)
-#print("true_pi_r:\n", true_pi_r)
-#print("true_psi:\n", true_psi)
 
-#Y = np.array([patient.Mprotein_values for _, patient in patient_dictionary.items()])
-#t = np.array([patient.measurement_times for _, patient in patient_dictionary.items()])
-#yi0 = np.array([[patient.Mprotein_values[0]] for _, patient in patient_dictionary.items()])
 Y = np.transpose(np.array([patient.Mprotein_values for _, patient in patient_dictionary.items()]))
 t = np.transpose(np.array([patient.measurement_times for _, patient in patient_dictionary.items()]))
 yi0 = np.array([patient.Mprotein_values[0] for _, patient in patient_dictionary.items()])
@@ -124,31 +110,7 @@ with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as multip
     beta_rho_r = pm.Deterministic("beta_rho_r", z_rho_r * tau_rho_r * lam_rho_r * at.sqrt(c2_rho_r / (c2_rho_r + tau_rho_r**2 * lam_rho_r**2)), dims="predictors")
     beta_pi_r = pm.Deterministic("beta_pi_r", z_pi_r * tau_pi_r * lam_pi_r * at.sqrt(c2_pi_r / (c2_pi_r + tau_pi_r**2 * lam_pi_r**2)), dims="predictors")
 
-    ##tau_rho_s = pm.HalfStudentT("tau_rho_s", 2, P0 / (P - P0) * sigma / np.sqrt(N_patients))
-    ##tau_rho_r = pm.HalfStudentT("tau_rho_r", 2, P0 / (P - P0) * sigma / np.sqrt(N_patients))
-    ##tau_pi_r = pm.HalfStudentT("tau_pi_r", 2, P0 / (P - P0) * sigma / np.sqrt(N_patients))
-    ### Local shrinkage prior
-    ##lam_rho_s = pm.HalfStudentT("lam_rho_s", 2, shape=(P,1))
-    ##lam_rho_r = pm.HalfStudentT("lam_rho_r", 2, shape=(P,1))
-    ##lam_pi_r = pm.HalfStudentT("lam_pi_r", 2, shape=(P,1))
-    ##c2_rho_s = pm.InverseGamma("c2_rho_s", 1, 0.1)
-    ##c2_rho_r = pm.InverseGamma("c2_rho_r", 1, 0.1)
-    ##c2_pi_r = pm.InverseGamma("c2_pi_r", 1, 0.1)
-    ##z_rho_s = pm.Normal("z_rho_s", 0.0, 1.0, shape=(P,1))
-    ##z_rho_r = pm.Normal("z_rho_r", 0.0, 1.0, shape=(P,1))
-    ##z_pi_r = pm.Normal("z_pi_r", 0.0, 1.0, shape=(P,1))
-    ### Shrunken coefficients
-    ##beta_rho_s = pm.Deterministic("beta_rho_s", z_rho_s * tau_rho_s * lam_rho_s * at.sqrt(c2_rho_s / (c2_rho_s + tau_rho_s**2 * lam_rho_s**2))) #, dims="predictors")
-    ##beta_rho_r = pm.Deterministic("beta_rho_r", z_rho_r * tau_rho_r * lam_rho_r * at.sqrt(c2_rho_r / (c2_rho_r + tau_rho_r**2 * lam_rho_r**2))) #, dims="predictors")
-    ##beta_pi_r = pm.Deterministic("beta_pi_r", z_pi_r * tau_pi_r * lam_pi_r * at.sqrt(c2_pi_r / (c2_pi_r + tau_pi_r**2 * lam_pi_r**2))) #, dims="predictors")
-    #beta_rho_s = pm.Normal("beta_rho_s", mu=0, sigma=1, shape=(P,1))
-    #beta_rho_r = pm.Normal("beta_rho_r", mu=0, sigma=1, shape=(P,1))
-    #beta_pi_r = pm.Normal("beta_pi_r", mu=0, sigma=1, shape=(P,1))
-
     # Latent variables theta
-    #theta_rho_s = alpha[0] + pm.math.dot(X, beta_rho_s) # Deterministically determined by x, beta, alpha
-    #theta_rho_r = alpha[1] + pm.math.dot(X, beta_rho_r) # Deterministically determined by x, beta, alpha
-    #theta_pi_r  = alpha[2] + pm.math.dot(X, beta_pi_r) # Deterministically determined by x, beta, alpha
     omega = pm.HalfNormal("omega",  sigma=1, shape=3) # Patient variability in theta (std)
     theta_rho_s = pm.Normal("theta_rho_s", mu= alpha[0] + at.dot(beta_rho_s, X), sigma=omega[0]) # Individual random intercepts in theta to confound effects of X
     theta_rho_r = pm.Normal("theta_rho_r", mu= alpha[1] + at.dot(beta_rho_r, X), sigma=omega[1]) # Individual random intercepts in theta to confound effects of X
@@ -160,7 +122,6 @@ with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as multip
     pi_r  = pm.Deterministic("pi_r", 1/(1+np.exp(-theta_pi_r)))
 
     # psi: True M protein at time 0
-    #psi = pm.Normal("psi", mu=psi_population, sigma=10, shape=(N_patients,1)) # Informative on population level
     psi = pm.Normal("psi", mu=yi0, sigma=sigma, shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma 
 
     # Observation model 
@@ -171,22 +132,45 @@ with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as multip
 # Visualize model
 import graphviz 
 gv = pm.model_to_graphviz(multiple_patients_model)
-gv.render(filename='./graph_of_model', format="png", view=True)
-#gv = pm.model_graph.model_to_graphviz(model)
+gv.render(filename='./graph_of_model', format="png", view=False)
+# Sample from prior:
+with multiple_patients_model:
+    prior_samples = pm.sample_prior_predictive(200)
+thresholded_Y_true = np.ravel(Y)
+thresholded_Y_true[thresholded_Y_true > 200] = 170
+thresholded_Y_sampl = np.ravel(prior_samples.prior_predictive["Y_obs"])
+thresholded_Y_sampl[thresholded_Y_sampl > 200] = 170
+az.plot_dist(
+    #np.log(thresholded_Y_true),
+    thresholded_Y_true,
+    color="C1",
+    label="observed",
+    #backend_kwargs={"set_xlim":"([-10,30])"}
+)
+az.plot_dist(
+    #np.log(thresholded_Y_sampl),
+    thresholded_Y_sampl,
+    label="simulated",
+    #backend_kwargs={"set_xlim":"([-10,30])"}
+)
+plt.title("Samples from prior compared to observations")
+plt.xlabel("Y (M protein)")
+plt.ylabel("Frequency")
+plt.savefig("./plots/posterior_plots/plot_prior_samples.png")
+#plt.show()
+plt.close()
+# Sample from posterior:
 with multiple_patients_model:
     # draw 1000 posterior samples
     idata = pm.sample()
+    #idata = pm.sample(1000, tune=2000, random_seed=42) #, target_accept=0.99)
 
 # We can see the first 5 values for the alpha variable in each chain as follows:
-#print("Showing data array for beta:\n", idata.posterior["beta"].sel(draw=slice(0, 4)))
-#print("Showing data array for sigma:\n", idata.posterior["sigma"].sel(draw=slice(0, 4)))
-#print("Showing data array for theta_rho_s:\n", idata.posterior["theta_rho_s"].sel(draw=slice(0, 4)))
-#print("Showing data array for theta_rho_r:\n", idata.posterior["theta_rho_r"].sel(draw=slice(0, 4)))
-#print("Showing data array for theta_pi_r:\n", idata.posterior["theta_pi_r"].sel(draw=slice(0, 4)))
-#print("Showing data array for psi:\n", idata.posterior["psi"].sel(draw=slice(0, 4)))
+#print("Showing data array for alpha:\n", idata.posterior["alpha"].sel(draw=slice(0, 4)))
 
 #print(az.summary(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), round_to=2)) #, stat_focus="median")
-print(az.summary(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'), round_to=2)) #, stat_focus="median")
+print(az.summary(idata, var_names=['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'], round_to=2)) #, stat_focus="median")
+print(az.summary(idata, var_names=['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'], round_to=2, stat_focus="median"))
 
 az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'), combined=True)
 plt.savefig("./plots/posterior_plots/plot_posterior_group_parameters.png")
@@ -195,7 +179,7 @@ plt.close()
 
 az.plot_trace(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), combined=True)
 plt.savefig("./plots/posterior_plots/plot_posterior_individual_parameters.png")
-plt.show()
+#plt.show()
 plt.close()
 
 # Test of exploration 
