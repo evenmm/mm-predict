@@ -190,9 +190,10 @@ class COMMPASS_Patient:
         print("Treatment history:")
         for number, treatment in enumerate(self.treatment_history):
             print(str(number) + ": [",treatment.start, "-", treatment.end, "]: treatment id", treatment.id)
-        print("Estimated parameters by period:")
-        for number, parameters in enumerate(self.parameter_estimates):
-            print(parameters.to_array_without_sigma(), "in", self.parameter_periods[number])
+        if len(self.parameter_estimates) > 0:
+            print("Estimated parameters by period:")
+            for number, parameters in enumerate(self.parameter_estimates):
+                print(parameters.to_array_without_sigma(), "in", self.parameter_periods[number])
     def add_Mprotein_line_to_patient(self, time, Mprotein, Kappa, Lambda):
         self.measurement_times = np.append(self.measurement_times,[time])
         self.Mprotein_values = np.append(self.Mprotein_values,[Mprotein])

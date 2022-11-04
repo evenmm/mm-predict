@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import arviz as az
 import pymc as pm
+import aesara.tensor as at
 # Initialize random number generator
 RANDOM_SEED = 42
 rng = np.random.default_rng(RANDOM_SEED)
@@ -55,12 +56,15 @@ expected_theta_3 = np.reshape(true_alpha[2] + np.dot(X, true_beta_pi_r), (N_pati
 true_theta_rho_s = np.random.normal(expected_theta_1, true_omega[0])
 true_theta_rho_r = np.random.normal(expected_theta_2, true_omega[1])
 true_theta_pi_r  = np.random.normal(expected_theta_3, true_omega[2])
+print("true_theta_rho_s[0:5]:\n", true_theta_rho_s[0:5])
+print("true_theta_rho_r[0:5]:\n", true_theta_rho_r[0:5])
+print("true_theta_pi_r[0:5]:\n", true_theta_pi_r[0:5])
 
 true_rho_s = - np.exp(true_theta_rho_s)
 true_rho_r = np.exp(true_theta_rho_r)
 true_pi_r  = 1/(1+np.exp(-true_theta_pi_r))
 true_psi = np.exp(np.random.normal(np.log(psi_population),0.1,size=N_patients))
-print("true_psi[-5:-1]:", true_psi[-5:-1])
+print("true_psi[0:5]:", true_psi[0:5])
 patient_dictionary = {}
 for training_instance_id in range(N_patients):
     psi_patient_i   = true_psi[training_instance_id]
@@ -75,22 +79,29 @@ for training_instance_id in range(N_patients):
 Y = np.transpose(np.array([patient.Mprotein_values for _, patient in patient_dictionary.items()]))
 t = np.transpose(np.array([patient.measurement_times for _, patient in patient_dictionary.items()]))
 yi0 = np.array([patient.Mprotein_values[0] for _, patient in patient_dictionary.items()])
+yi0 = np.maximum(yi0, 1e-5)
 #print("Y:\n", Y)
 #print("t:\n", t)
 #print("yi0:\n", yi0)
+#print("X:\n", X)
 X_not_transformed = X.copy()
 print(X_not_transformed.columns.values)
 X = X.T
+print("Shapes:")
+print("Y:", Y.shape)
+print("t:", t.shape)
+print("yi0:", yi0.shape)
+print("X:", X.shape)
 print("Done generating data")
 ##############################
-import aesara.tensor as at
 with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as multiple_patients_model:
     # Observation noise (std)
     sigma = pm.HalfNormal("sigma", sigma=1)
 
     # alpha
-    alpha = pm.Normal("alpha",  mu=true_alpha,  sigma=1, shape=3)
-    # beta (with horseshoe priors)
+    alpha = pm.Normal("alpha",  mu=np.array([np.log(0.002), np.log(0.002), np.log(0.5/(1-0.5))]),  sigma=1, shape=3)
+
+    # beta (with horseshoe priors):
     # Global shrinkage prior
     tau_rho_s = pm.HalfStudentT("tau_rho_s", 2, P0 / (P - P0) * sigma / np.sqrt(N_patients))
     tau_rho_r = pm.HalfStudentT("tau_rho_r", 2, P0 / (P - P0) * sigma / np.sqrt(N_patients))
@@ -116,13 +127,22 @@ with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as multip
     theta_rho_r = pm.Normal("theta_rho_r", mu= alpha[1] + at.dot(beta_rho_r, X), sigma=omega[1]) # Individual random intercepts in theta to confound effects of X
     theta_pi_r  = pm.Normal("theta_pi_r",  mu= alpha[2] + at.dot(beta_pi_r, X),  sigma=omega[2]) # Individual random intercepts in theta to confound effects of X
 
+    # psi: True M protein at time 0
+    # Exact but does not work: 
+    #log_psi = pm.Normal("log_psi", mu=np.log(yi0) - np.log( (sigma**2)/(yi0**2) - 1), sigma=np.log( (sigma**2)/(yi0**2) - 1), shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma 
+    #psi = pm.Deterministic("psi", np.exp(log_psi))
+    # Bad:
+    #log_psi = pm.Normal("log_psi", mu=np.log(yi0), sigma=1, shape=N_patients)
+    #psi = pm.Deterministic("psi", np.exp(log_psi))
+    # Worse: 
+    #psi = pm.HalfNormal("psi", sigma=10, shape=N_patients)
+    # This wrong because normal, but still the best on our case: 
+    psi = pm.Normal("psi", mu=yi0, sigma=sigma, shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma 
+
     # Transformed latent variables 
     rho_s = pm.Deterministic("rho_s", -np.exp(theta_rho_s))
     rho_r = pm.Deterministic("rho_r", np.exp(theta_rho_r))
     pi_r  = pm.Deterministic("pi_r", 1/(1+np.exp(-theta_pi_r)))
-
-    # psi: True M protein at time 0
-    psi = pm.Normal("psi", mu=yi0, sigma=sigma, shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma 
 
     # Observation model 
     mu_Y = psi * (pi_r*np.exp(rho_r*t) + (1-pi_r)*np.exp(rho_s*t))
@@ -162,22 +182,36 @@ plt.close()
 # Sample from posterior:
 with multiple_patients_model:
     # draw 1000 posterior samples
-    idata = pm.sample()
-    #idata = pm.sample(1000, tune=2000, random_seed=42) #, target_accept=0.99)
+    idata = pm.sample(1000, tune=2000, random_seed=42) #, target_accept=0.99)
 
 # We can see the first 5 values for the alpha variable in each chain as follows:
 #print("Showing data array for alpha:\n", idata.posterior["alpha"].sel(draw=slice(0, 4)))
 
-#print(az.summary(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), round_to=2)) #, stat_focus="median")
-print(az.summary(idata, var_names=['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'], round_to=2)) #, stat_focus="median")
-print(az.summary(idata, var_names=['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'], round_to=2, stat_focus="median"))
+print(az.summary(idata, var_names=['theta_rho_s'], round_to=4)) #, 'rho_s', 'rho_r', 'pi_r'], round_to=4))
+#print(az.summary(idata, var_names=['theta_rho_s'], round_to=4, stat_focus="median")) #, 'rho_s', 'rho_r', 'pi_r'], round_to=4), stat_focus="median")
+print(az.summary(idata, var_names=['theta_rho_r'], round_to=4)) #, 'rho_s', 'rho_r', 'pi_r'], round_to=4))
+#print(az.summary(idata, var_names=['theta_rho_r'], round_to=4, stat_focus="median")) #, 'rho_s', 'rho_r', 'pi_r'], round_to=4), stat_focus="median")
+print(az.summary(idata, var_names=['theta_pi_r'], round_to=4)) #, 'rho_s', 'rho_r', 'pi_r'], round_to=4))
+#print(az.summary(idata, var_names=['theta_pi_r'], round_to=4, stat_focus="median")) #, 'rho_s', 'rho_r', 'pi_r'], round_to=4), stat_focus="median")
+print(az.summary(idata, var_names=['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'], round_to=4))
+print(az.summary(idata, var_names=['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'], round_to=4, stat_focus="median"))
 
-az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'), combined=True)
+print("Access posterior predictive samples directly:")
+print('alpha:', np.ravel(idata.posterior['alpha']))
+print('beta_rho_s:', np.ravel(idata.posterior['beta_rho_s']))
+print('beta_rho_r:', np.ravel(idata.posterior['beta_rho_r']))
+print('beta_pi_r:', np.ravel(idata.posterior['beta_pi_r']))
+print('omega:', np.ravel(idata.posterior['omega']))
+print('sigma:', np.ravel(idata.posterior['sigma']))
+
+lines = [('alpha', {}, true_alpha), ('beta_rho_s', {}, true_beta_rho_s), ('beta_rho_r', {}, true_beta_rho_r), ('beta_pi_r', {}, true_beta_pi_r), ('omega', {}, true_omega), ('sigma', {}, true_sigma)]
+az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'), lines=lines, combined=True)
 plt.savefig("./plots/posterior_plots/plot_posterior_group_parameters.png")
 plt.show()
 plt.close()
 
-az.plot_trace(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), combined=True)
+lines = [('theta_rho_s', {}, true_theta_rho_s), ('theta_rho_r', {}, true_theta_rho_r), ('theta_pi_r', {}, true_theta_pi_r), ('rho_s', {}, true_rho_s), ('rho_r', {}, true_rho_r), ('pi_r', {}, true_pi_r)]
+az.plot_trace(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), lines=lines, combined=True)
 plt.savefig("./plots/posterior_plots/plot_posterior_individual_parameters.png")
 #plt.show()
 plt.close()
@@ -185,7 +219,7 @@ plt.close()
 # Test of exploration 
 az.plot_energy(idata)
 plt.savefig("./plots/posterior_plots/plot_energy.png")
-plt.show()
+#plt.show()
 plt.close()
 # Plot of coefficients
 az.plot_forest(idata, var_names=["alpha"], combined=True, hdi_prob=0.95, r_hat=True)
