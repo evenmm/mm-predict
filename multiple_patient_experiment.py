@@ -11,7 +11,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 print(f"Running on PyMC v{pm.__version__}")
 ##############################
 # Generate data
-true_sigma = 0.1
+true_sigma = 1
 N_patients = 100
 
 # True parameter values
@@ -20,7 +20,7 @@ P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for
 X_mean = np.repeat(0,P)
 X_std = np.repeat(0.5,P)
 X = np.random.normal(X_mean, X_std, size=(N_patients,P))
-X = pd.DataFrame(X, columns = ['Covariate_1','Covariate_2','Covariate_3', 'Covariate_4','Covariate_5','Covariate_6'])
+X = pd.DataFrame(X, columns = ["Covariate "+str(ii+1) for ii in range(P)])
 # These are the true parameters for x1 = 0 (median):
 rho_s_population = -0.005
 rho_r_population = 0.001
@@ -32,9 +32,15 @@ theta_pi_r_population_for_x_equal_to_zero  = np.log(pi_r_population/(1-pi_r_popu
 
 true_omega = np.array([0.05, 0.10, 0.15])
 true_alpha = np.array([theta_rho_s_population_for_x_equal_to_zero, theta_rho_r_population_for_x_equal_to_zero, theta_pi_r_population_for_x_equal_to_zero])
-true_beta_rho_s = np.array([0.8, 0.9, 0.0, 0.0, 0.0, 0.0])
-true_beta_rho_r = np.array([0.7, 1.0, 0.0, 0.0, 0.0, 0.0])
-true_beta_pi_r = np.array([0.0, 1.1, 0.0, 0.0, 0.0, 0.0])
+true_beta_rho_s = np.zeros(P)
+true_beta_rho_s[0] = 0.8
+true_beta_rho_s[1] = 0.9
+true_beta_rho_r = np.zeros(P)
+true_beta_rho_r[0] = 0.7
+true_beta_rho_r[1] = 1.0
+true_beta_pi_r = np.zeros(P)
+true_beta_pi_r[0] = 0.0
+true_beta_pi_r[1] = 1.1
 
 print("true_alpha[0]:", true_alpha[0])
 print("true_alpha[1]:", true_alpha[1])
@@ -44,8 +50,8 @@ print("true_beta_rho_r: ", true_beta_rho_r)
 print("true_beta_pi_r: ", true_beta_pi_r)
 
 days_between_measurements = 300
-number_of_measurements = 3
-measurement_times = days_between_measurements * np.linspace(0, number_of_measurements, number_of_measurements+1)
+number_of_measurements = 4
+measurement_times = days_between_measurements * np.linspace(0, number_of_measurements-1, number_of_measurements)
 treatment_history = np.array([Treatment(start=0, end=measurement_times[-1], id=1)])
 
 expected_theta_1 = np.reshape(true_alpha[0] + np.dot(X, true_beta_rho_s), (N_patients,1))
@@ -182,7 +188,7 @@ plt.close()
 # Sample from posterior:
 with multiple_patients_model:
     # draw 1000 posterior samples
-    idata = pm.sample(1000, tune=2000, random_seed=42) #, target_accept=0.99)
+    idata = pm.sample(1000, tune=1000, random_seed=42, target_accept=0.99)
 
 # We can see the first 5 values for the alpha variable in each chain as follows:
 #print("Showing data array for alpha:\n", idata.posterior["alpha"].sel(draw=slice(0, 4)))
@@ -249,6 +255,20 @@ az.plot_forest(idata, var_names=["theta_pi_r"], combined=True, hdi_prob=0.95, r_
 plt.savefig("./plots/posterior_plots/plot_forest_theta_pi_r.png")
 #plt.show()
 plt.close()
+
+try:
+    scores = geweke(idata, first=0.1, last=0.5, intervals=20)
+    pm.Matplot.geweke_plot(scores) 
+except:
+    print("scores = az.geweke(idata, first=0.1, last=0.5, intervals=20) did not work")
+
+try:
+    scores = az.geweke(idata, first=0.1, last=0.5, intervals=20)
+    pm.Matplot.geweke_plot(scores) 
+except:
+    print("scores = az.geweke(idata, first=0.1, last=0.5, intervals=20) did not work")
+
+#pm.Matplot.geweke_plot(scores, name='geweke', format='png', suffix='-diagnostic', path='./', fontmap = {1:10, 2:8, 3:6, 4:5, 5:4}, verbose=1)
 
 # Remember to handle missingness and standardize: 
 # Standardize the features
