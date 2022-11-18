@@ -11,7 +11,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 print(f"Running on PyMC v{pm.__version__}")
 ##############################
 # Generate data
-true_sigma = 1
+true_sigma = 0.1
 N_patients = 100
 
 # True parameter values
@@ -49,8 +49,8 @@ print("true_beta_rho_s: ", true_beta_rho_s)
 print("true_beta_rho_r: ", true_beta_rho_r)
 print("true_beta_pi_r: ", true_beta_pi_r)
 
-days_between_measurements = 300
-number_of_measurements = 4
+number_of_measurements = 5
+days_between_measurements = int(1500/number_of_measurements)
 measurement_times = days_between_measurements * np.linspace(0, number_of_measurements-1, number_of_measurements)
 treatment_history = np.array([Treatment(start=0, end=measurement_times[-1], id=1)])
 
@@ -62,14 +62,19 @@ expected_theta_3 = np.reshape(true_alpha[2] + np.dot(X, true_beta_pi_r), (N_pati
 true_theta_rho_s = np.random.normal(expected_theta_1, true_omega[0])
 true_theta_rho_r = np.random.normal(expected_theta_2, true_omega[1])
 true_theta_pi_r  = np.random.normal(expected_theta_3, true_omega[2])
+# To generate the data, we employ a "fourth omega" for psi. But since we do not explain theta_psi by a linear predictor
+#    , we instead estimate xi in the MCMC, which is the standard deviation of psi_i^0 from y_i1. 
+true_omega_for_psi = 0.1
+true_theta_psi = np.random.normal(np.log(psi_population), true_omega_for_psi, size=N_patients)
 print("true_theta_rho_s[0:5]:\n", true_theta_rho_s[0:5])
 print("true_theta_rho_r[0:5]:\n", true_theta_rho_r[0:5])
 print("true_theta_pi_r[0:5]:\n", true_theta_pi_r[0:5])
+print("true_theta_psi[0:5]:\n", true_theta_psi[0:5])
 
 true_rho_s = - np.exp(true_theta_rho_s)
 true_rho_r = np.exp(true_theta_rho_r)
 true_pi_r  = 1/(1+np.exp(-true_theta_pi_r))
-true_psi = np.exp(np.random.normal(np.log(psi_population),0.1,size=N_patients))
+true_psi = np.exp(true_theta_psi)
 print("true_psi[0:5]:", true_psi[0:5])
 patient_dictionary = {}
 for training_instance_id in range(N_patients):
@@ -134,16 +139,15 @@ with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as multip
     theta_pi_r  = pm.Normal("theta_pi_r",  mu= alpha[2] + at.dot(beta_pi_r, X),  sigma=omega[2]) # Individual random intercepts in theta to confound effects of X
 
     # psi: True M protein at time 0
-    # Exact but does not work: 
+    # 1) Works well, possibly negative tail 
+    #psi = pm.Normal("psi", mu=yi0, sigma=sigma, shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma 
+    # 2) Works if you give it time to converge:
+    xi = pm.HalfNormal("xi", sigma=1)
+    log_psi = pm.Normal("log_psi", mu=np.log(yi0), sigma=xi, shape=N_patients)
+    psi = pm.Deterministic("psi", np.exp(log_psi))
+    # 3) Exact but does not work: 
     #log_psi = pm.Normal("log_psi", mu=np.log(yi0) - np.log( (sigma**2)/(yi0**2) - 1), sigma=np.log( (sigma**2)/(yi0**2) - 1), shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma 
     #psi = pm.Deterministic("psi", np.exp(log_psi))
-    # Bad:
-    #log_psi = pm.Normal("log_psi", mu=np.log(yi0), sigma=1, shape=N_patients)
-    #psi = pm.Deterministic("psi", np.exp(log_psi))
-    # Worse: 
-    #psi = pm.HalfNormal("psi", sigma=10, shape=N_patients)
-    # This wrong because normal, but still the best on our case: 
-    psi = pm.Normal("psi", mu=yi0, sigma=sigma, shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma 
 
     # Transformed latent variables 
     rho_s = pm.Deterministic("rho_s", -np.exp(theta_rho_s))
@@ -188,7 +192,7 @@ plt.close()
 # Sample from posterior:
 with multiple_patients_model:
     # draw 1000 posterior samples
-    idata = pm.sample(1000, tune=1000, random_seed=42, target_accept=0.99)
+    idata = pm.sample(3000, tune=3000, random_seed=42, target_accept=0.99)
 
 # We can see the first 5 values for the alpha variable in each chain as follows:
 #print("Showing data array for alpha:\n", idata.posterior["alpha"].sel(draw=slice(0, 4)))
@@ -216,6 +220,11 @@ plt.savefig("./plots/posterior_plots/plot_posterior_group_parameters.png")
 plt.show()
 plt.close()
 
+az.plot_trace(idata, var_names=('xi'), combined=True)
+plt.savefig("./plots/posterior_plots/plot_posterior_group_parameters_xi.png")
+plt.show()
+plt.close()
+
 lines = [('theta_rho_s', {}, true_theta_rho_s), ('theta_rho_r', {}, true_theta_rho_r), ('theta_pi_r', {}, true_theta_pi_r), ('rho_s', {}, true_rho_s), ('rho_r', {}, true_rho_r), ('pi_r', {}, true_pi_r)]
 az.plot_trace(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), lines=lines, combined=True)
 plt.savefig("./plots/posterior_plots/plot_posterior_individual_parameters.png")
@@ -228,30 +237,37 @@ plt.savefig("./plots/posterior_plots/plot_energy.png")
 #plt.show()
 plt.close()
 # Plot of coefficients
-az.plot_forest(idata, var_names=["alpha"], combined=True, hdi_prob=0.95, r_hat=True)
+fig, (ax,) = az.plot_forest(idata, var_names=["alpha"], combined=True, hdi_prob=0.95, r_hat=True)
+#ax.vlines(true_alpha, ylims)
 plt.savefig("./plots/posterior_plots/plot_forest_alpha.png")
 #plt.show()
-az.plot_forest(idata, var_names=["beta_rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
+fig, (ax,) = az.plot_forest(idata, var_names=["beta_rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
+#ax.vlines(true_beta_rho_s, ylims)
 plt.savefig("./plots/posterior_plots/plot_forest_beta_rho_s.png")
 #plt.show()
 plt.close()
-az.plot_forest(idata, var_names=["beta_rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
+fig, (ax,) = az.plot_forest(idata, var_names=["beta_rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
+#ax.vlines(true_beta_rho_r, ylims)
 plt.savefig("./plots/posterior_plots/plot_forest_beta_rho_r.png")
 #plt.show()
 plt.close()
-az.plot_forest(idata, var_names=["beta_pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
+fig, (ax,) = az.plot_forest(idata, var_names=["beta_pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
+#ax.vlines(true_beta_pi_r, ylims)
 plt.savefig("./plots/posterior_plots/plot_forest_beta_pi_r.png")
 #plt.show()
 plt.close()
-az.plot_forest(idata, var_names=["theta_rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
+fig, (ax,) = az.plot_forest(idata, var_names=["theta_rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
+#ax.vlines(true_theta_rho_s, ylims)
 plt.savefig("./plots/posterior_plots/plot_forest_theta_rho_s.png")
 #plt.show()
 plt.close()
-az.plot_forest(idata, var_names=["theta_rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
+fig, (ax,) = az.plot_forest(idata, var_names=["theta_rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
+#ax.vlines(true_theta_rho_r, ylims)
 plt.savefig("./plots/posterior_plots/plot_forest_theta_rho_r.png")
 #plt.show()
 plt.close()
-az.plot_forest(idata, var_names=["theta_pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
+fig, (ax,) = az.plot_forest(idata, var_names=["theta_pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
+#ax.vlines(true_theta_pi_r, ylims)
 plt.savefig("./plots/posterior_plots/plot_forest_theta_pi_r.png")
 #plt.show()
 plt.close()
