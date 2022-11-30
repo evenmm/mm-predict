@@ -12,8 +12,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 # Function argument shapes: 
 # X is an (N_patients, P) shaped pandas dataframe
 # patient dictionary contains N_patients patients in the same order as X
-
-def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, psi_prior="lognormal"):
+def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, psi_prior="lognormal", FUNNEL_REPARAMETRIZATION=False):
     N_patients, P = X.shape
     P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
     X_not_transformed = X.copy()
@@ -21,6 +20,24 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
     Y = np.transpose(np.array([patient.Mprotein_values for _, patient in patient_dictionary.items()]))
     t = np.transpose(np.array([patient.measurement_times for _, patient in patient_dictionary.items()]))
     yi0 = np.maximum(1e-5, np.array([patient.Mprotein_values[0] for _, patient in patient_dictionary.items()]))
+
+    print("Max(Y):", np.amax(Y))
+    print("Max(t):", np.amax(t))
+    viz_Y = Y[Y<250]
+    plt.figure()
+    sns.distplot(Y, hist=True, kde=True, 
+             bins=int(180/5), color = 'darkblue', 
+             hist_kws={'edgecolor':'black'},
+             kde_kws={'linewidth': 1, 'gridsize':100})
+    plt.savefig("./plots/posterior_plots/"+name+"-plot_density.png")
+    plt.close
+    plt.figure()
+    sns.distplot(viz_Y, hist=True, kde=True, 
+             bins=int(180/5), color = 'darkblue', 
+             hist_kws={'edgecolor':'black'},
+             kde_kws={'linewidth': 1, 'gridsize':100})
+    plt.savefig("./plots/posterior_plots/"+name+"-plot_density_lessthan_250.png")
+    plt.close
     if psi_prior not in ["lognormal", "normal"]:
         print("Unknown prior option specified for psi; Using 'lognormal' prior")
         psi_prior = "lognormal"
@@ -54,9 +71,19 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
 
         # Latent variables theta
         omega = pm.HalfNormal("omega",  sigma=1, shape=3) # Patient variability in theta (std)
-        theta_rho_s = pm.Normal("theta_rho_s", mu= alpha[0] + at.dot(beta_rho_s, X), sigma=omega[0]) # Individual random intercepts in theta to confound effects of X
-        theta_rho_r = pm.Normal("theta_rho_r", mu= alpha[1] + at.dot(beta_rho_r, X), sigma=omega[1]) # Individual random intercepts in theta to confound effects of X
-        theta_pi_r  = pm.Normal("theta_pi_r",  mu= alpha[2] + at.dot(beta_pi_r, X),  sigma=omega[2]) # Individual random intercepts in theta to confound effects of X
+        if FUNNEL_REPARAMETRIZATION == True: 
+            # Reparametrized to escape/explore the funnel of Hell (https://twiecki.io/blog/2017/02/08/bayesian-hierchical-non-centered/):
+            theta_rho_s_offset = pm.Normal('theta_rho_s_offset', mu=0, sigma=1, shape=N_patients)
+            theta_rho_r_offset = pm.Normal('theta_rho_r_offset', mu=0, sigma=1, shape=N_patients)
+            theta_pi_r_offset  = pm.Normal('theta_pi_r_offset',  mu=0, sigma=1, shape=N_patients)
+            theta_rho_s = pm.Deterministic("theta_rho_s", (alpha[0] + at.dot(beta_rho_s, X)) + theta_rho_s_offset * omega[0])
+            theta_rho_r = pm.Deterministic("theta_rho_r", (alpha[1] + at.dot(beta_rho_r, X)) + theta_rho_r_offset * omega[1])
+            theta_pi_r  = pm.Deterministic("theta_pi_r",  (alpha[2] + at.dot(beta_pi_r,  X)) + theta_pi_r_offset  * omega[2])
+        else: 
+            # Original
+            theta_rho_s = pm.Normal("theta_rho_s", mu= alpha[0] + at.dot(beta_rho_s, X), sigma=omega[0]) # Individual random intercepts in theta to confound effects of X
+            theta_rho_r = pm.Normal("theta_rho_r", mu= alpha[1] + at.dot(beta_rho_r, X), sigma=omega[1]) # Individual random intercepts in theta to confound effects of X
+            theta_pi_r  = pm.Normal("theta_pi_r",  mu= alpha[2] + at.dot(beta_pi_r, X),  sigma=omega[2]) # Individual random intercepts in theta to confound effects of X
 
         # psi: True M protein at time 0
         # 1) Normal. Fast convergence, but possibly negative tail 
@@ -88,28 +115,24 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
     # Sample from prior:
     with multiple_patients_model:
         prior_samples = pm.sample_prior_predictive(200)
-    thresholded_Y_true = np.ravel(Y)
-    thresholded_Y_true[thresholded_Y_true > 200] = 170
-    thresholded_Y_sampl = np.ravel(prior_samples.prior_predictive["Y_obs"])
-    thresholded_Y_sampl[thresholded_Y_sampl > 200] = 170
+    raveled_Y_true = np.ravel(Y)
+    raveled_Y_sample = np.ravel(prior_samples.prior_predictive["Y_obs"])
+    plt.figure()
     az.plot_dist(
-        #np.log(thresholded_Y_true),
-        thresholded_Y_true,
+        raveled_Y_true[raveled_Y_true<250],
         color="C1",
         label="observed",
-        #backend_kwargs={"set_xlim":"([-10,30])"}
+        bw=3,
     )
     az.plot_dist(
-        #np.log(thresholded_Y_sampl),
-        thresholded_Y_sampl,
+        raveled_Y_sample[raveled_Y_sample<250],
         label="simulated",
-        #backend_kwargs={"set_xlim":"([-10,30])"}
+        bw=3,
     )
-    plt.title("Samples from prior compared to observations")
+    plt.title("Samples from prior compared to observations, for Y<250")
     plt.xlabel("Y (M protein)")
     plt.ylabel("Frequency")
     plt.savefig("./plots/posterior_plots/"+name+"-plot_prior_samples.png")
-    #plt.show()
     plt.close()
     # Draw samples from posterior:
     with multiple_patients_model:
