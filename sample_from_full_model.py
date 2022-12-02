@@ -44,16 +44,16 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
 
     with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as multiple_patients_model:
         # Observation noise (std)
-        sigma = pm.HalfNormal("sigma", sigma=1)
+        sigma_obs = pm.HalfNormal("sigma_obs", sigma=1)
 
         # alpha
         alpha = pm.Normal("alpha",  mu=np.array([np.log(0.002), np.log(0.002), np.log(0.5/(1-0.5))]),  sigma=1, shape=3)
 
         # beta (with horseshoe priors):
         # Global shrinkage prior
-        tau_rho_s = pm.HalfStudentT("tau_rho_s", 2, P0 / (P - P0) * sigma / np.sqrt(N_patients))
-        tau_rho_r = pm.HalfStudentT("tau_rho_r", 2, P0 / (P - P0) * sigma / np.sqrt(N_patients))
-        tau_pi_r = pm.HalfStudentT("tau_pi_r", 2, P0 / (P - P0) * sigma / np.sqrt(N_patients))
+        tau_rho_s = pm.HalfStudentT("tau_rho_s", 2, P0 / (P - P0) * sigma_obs / np.sqrt(N_patients))
+        tau_rho_r = pm.HalfStudentT("tau_rho_r", 2, P0 / (P - P0) * sigma_obs / np.sqrt(N_patients))
+        tau_pi_r = pm.HalfStudentT("tau_pi_r", 2, P0 / (P - P0) * sigma_obs / np.sqrt(N_patients))
         # Local shrinkage prior
         lam_rho_s = pm.HalfStudentT("lam_rho_s", 2, dims="predictors")
         lam_rho_r = pm.HalfStudentT("lam_rho_r", 2, dims="predictors")
@@ -88,14 +88,14 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
         # psi: True M protein at time 0
         # 1) Normal. Fast convergence, but possibly negative tail 
         if psi_prior=="normal":
-            psi = pm.Normal("psi", mu=yi0, sigma=sigma, shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma 
+            psi = pm.Normal("psi", mu=yi0, sigma=sigma_obs, shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma 
         # 2) Lognormal. Works if you give it time to converge
         if psi_prior=="lognormal":
             xi = pm.HalfNormal("xi", sigma=1)
             log_psi = pm.Normal("log_psi", mu=np.log(yi0), sigma=xi, shape=N_patients)
             psi = pm.Deterministic("psi", np.exp(log_psi))
         # 3) Exact but does not work: 
-        #log_psi = pm.Normal("log_psi", mu=np.log(yi0) - np.log( (sigma**2)/(yi0**2) - 1), sigma=np.log( (sigma**2)/(yi0**2) - 1), shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma 
+        #log_psi = pm.Normal("log_psi", mu=np.log(yi0) - np.log( (sigma_obs**2)/(yi0**2) - 1), sigma=np.log( (sigma_obs**2)/(yi0**2) - 1), shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma_obs 
         #psi = pm.Deterministic("psi", np.exp(log_psi))
 
         # Transformed latent variables 
@@ -107,7 +107,7 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
         mu_Y = psi * (pi_r*np.exp(rho_r*t) + (1-pi_r)*np.exp(rho_s*t))
 
         # Likelihood (sampling distribution) of observations
-        Y_obs = pm.Normal("Y_obs", mu=mu_Y, sigma=sigma, observed=Y)
+        Y_obs = pm.Normal("Y_obs", mu=mu_Y, sigma=sigma_obs, observed=Y)
     # Visualize model
     import graphviz 
     gv = pm.model_to_graphviz(multiple_patients_model)
@@ -117,19 +117,21 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
         prior_samples = pm.sample_prior_predictive(200)
     raveled_Y_true = np.ravel(Y)
     raveled_Y_sample = np.ravel(prior_samples.prior_predictive["Y_obs"])
+    # Below plotlimit_prior
+    plotlimit_prior = 1000
     plt.figure()
-    az.plot_dist(
-        raveled_Y_true[raveled_Y_true<250],
-        color="C1",
-        label="observed",
-        bw=3,
-    )
-    az.plot_dist(
-        raveled_Y_sample[raveled_Y_sample<250],
-        label="simulated",
-        bw=3,
-    )
-    plt.title("Samples from prior compared to observations, for Y<250")
+    az.plot_dist(raveled_Y_true[raveled_Y_true<plotlimit_prior], color="C1", label="observed", bw=3)
+    az.plot_dist(raveled_Y_sample[raveled_Y_sample<plotlimit_prior], label="simulated", bw=3)
+    plt.title("Samples from prior compared to observations, for Y<plotlimit_prior")
+    plt.xlabel("Y (M protein)")
+    plt.ylabel("Frequency")
+    plt.savefig("./plots/posterior_plots/"+name+"-plot_prior_samples_below_"+str(plotlimit_prior)+".png")
+    plt.close()
+    # All samples: 
+    plt.figure()
+    az.plot_dist(raveled_Y_true, color="C1", label="observed", bw=3)
+    az.plot_dist(raveled_Y_sample, label="simulated", bw=3)
+    plt.title("Samples from prior compared to observations")
     plt.xlabel("Y (M protein)")
     plt.ylabel("Frequency")
     plt.savefig("./plots/posterior_plots/"+name+"-plot_prior_samples.png")

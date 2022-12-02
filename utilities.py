@@ -762,3 +762,36 @@ def posterior(all_psi_i, theta):
     likelihood_of_observed_M_given_psi_model_1 = 
 
 """
+# Convergence checks
+def quasi_geweke_test(idata, first=0.1, last=0.5, intervals=20):
+    if first+last > 1:
+        print("Overriding input since first+last>1. New first, last = 0.1, 0.5")
+        first, last = 0.1, 0.5
+    print("Running Geweke test...")
+    convergence_flag = True
+    for var_name in ['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r']:
+        sample_shape = idata.posterior[var_name].shape
+        n_chains = sample_shape[0]
+        n_samples = sample_shape[1]
+        var_dims = sample_shape[2]
+        for chain in range(n_chains):
+            for dim in range(var_dims):
+                all_samples = np.ravel(idata.posterior[var_name][chain,:,dim])
+                first_part = all_samples[0:int(n_samples*first)]
+                last_part = all_samples[n_samples-int(n_samples*last):n_samples]
+                z_score = (np.mean(first_part)-np.mean(last_part)) / np.sqrt(np.var(first_part)+np.var(last_part))
+                if abs(z_score) >= 1.960:
+                    convergence_flag = False
+                    print("Seems like chain",chain,"has not converged in",var_name,"dimension",dim,": z_score is",z_score)
+    for var_name in ['sigma_obs']:
+        all_samples = np.ravel(idata.posterior[var_name])
+        n_samples = len(all_samples)
+        first_part = all_samples[0:int(n_samples*first)]
+        last_part = all_samples[n_samples-int(n_samples*last):n_samples]
+        z_score = (np.mean(first_part)-np.mean(last_part)) / np.sqrt(np.var(first_part)+np.var(last_part))
+        if abs(z_score) >= 1.960:
+            convergence_flag = False
+            print("Seems like chain",chain,"has not converged in",var_name,"dimension",dim,": z_score is",z_score)
+    if convergence_flag:
+        print("All chains seem to have converged.")
+    return 0

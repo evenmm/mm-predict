@@ -50,17 +50,35 @@ for i in range(N_patients):
 y = 100*np.array([elem[0:M_number_of_measurements] for elem in y])
 times = np.array([elem[0:M_number_of_measurements] for elem in times])
 
-# y and times are cropped
+# y and times are cropped: Update the patient dictionary 
 dummy_patient_dict  = {}
 for training_instance_id in range(0, N_patients):
     dummy_patient_dict[training_instance_id] = patient_dictionary[training_instance_id]
     dummy_patient_dict[training_instance_id].measurement_times = times[training_instance_id]
     dummy_patient_dict[training_instance_id].Mprotein_values = y[training_instance_id]
-
 patient_dictionary = dummy_patient_dict
+
+# Keep only patients that are in EHR data: 
+COMMPASS_current_name_list = [elem[0] for elem in training_instance_dict.values()]
+df_EHR = pd.read_excel('./COMMPASS_data/220615_commpass_clinical_genomic_annotated_EHR.xlsx')
+EHR_name_list = [elem.replace("_1_BM" ,"", 1) for elem in df_EHR.loc[:,"sample"]]
+NEW_TRAIN_ID = 0
+new_patient_dictionary = {}
+new_training_instance_dict = {}
+for training_instance_id, patient in patient_dictionary.items(): # Dummy dictionary has training_instance_id as key
+    this_name = COMMPASS_current_name_list[training_instance_id]
+    if this_name in EHR_name_list: 
+        new_patient_dictionary[NEW_TRAIN_ID] = patient_dictionary[training_instance_id] # equal to: "= patient"
+        new_training_instance_dict[NEW_TRAIN_ID] = training_instance_dict[training_instance_id]
+        NEW_TRAIN_ID = NEW_TRAIN_ID + 1
+N_patients = NEW_TRAIN_ID + 1
+# This resets from "patient_dictionary, training_instance_dict = create_training_instance_dictionary_with_covariates"
+patient_dictionary = new_patient_dictionary
+training_instance_dict = new_training_instance_dict
+
 X = feature_extraction(training_instance_dict)
 _, P = X.shape
-psi_prior="lognormal"
+psi_prior="normal"
 N_samples = 3000
 N_tuning = 3000
 target_accept = 0.99
@@ -71,7 +89,7 @@ print("Running"+name)
 idata = sample_from_full_model(X, patient_dictionary, name, N_samples=N_samples, N_tuning=N_tuning, target_accept=target_accept, max_treedepth=max_treedepth, psi_prior=psi_prior, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION)
 
 print("Done sampling")
-az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'), combined=True)
+az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma_obs'), combined=True)
 plt.savefig("./plots/posterior_plots/"+name+"-plot_posterior_group_parameters.png")
 plt.close()
 
