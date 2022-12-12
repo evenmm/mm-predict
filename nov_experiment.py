@@ -12,8 +12,8 @@ rng = np.random.default_rng(RANDOM_SEED)
 print(f"Running on PyMC v{pm.__version__}")
 
 class experiment:
-    def __init__(self, true_sigma, N_patients, P, number_of_measurements, psi_prior, N_samples, N_tuning, target_accept, max_treedepth, FUNNEL_REPARAMETRIZATION):
-        self.true_sigma = true_sigma
+    def __init__(self, true_sigma_obs, N_patients, P, number_of_measurements, psi_prior, N_samples, N_tuning, target_accept, max_treedepth, FUNNEL_REPARAMETRIZATION):
+        self.true_sigma_obs = true_sigma_obs
         self.N_patients = N_patients
         self.P = P
         self.number_of_measurements = number_of_measurements
@@ -23,37 +23,51 @@ class experiment:
         self.target_accept = target_accept
         self.max_treedepth = max_treedepth
         self.FUNNEL_REPARAMETRIZATION = FUNNEL_REPARAMETRIZATION
-        self.name = "M_"+str(number_of_measurements)+"_P_"+str(P)+"_true_sigma_"+str(true_sigma)+"_N_patients_"+str(N_patients)+"_psi_prior_"+psi_prior+"_N_samples_"+str(N_samples)+"_N_tuning_"+str(N_tuning)+"_target_accept_"+str(target_accept)+"_max_treedepth_"+str(max_treedepth)+"_FUNNEL_REPARAMETRIZATION_"+str(FUNNEL_REPARAMETRIZATION)
+        self.name = "M_"+str(number_of_measurements)+"_P_"+str(P)+"_true_sigma_obs_"+str(true_sigma_obs)+"_N_patients_"+str(N_patients)+"_psi_prior_"+psi_prior+"_N_samples_"+str(N_samples)+"_N_tuning_"+str(N_tuning)+"_target_accept_"+str(target_accept)+"_max_treedepth_"+str(max_treedepth)+"_FUNNEL_REPARAMETRIZATION_"+str(FUNNEL_REPARAMETRIZATION)
 
 experiments = [
-    experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=20, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=20, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=30, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=30, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=40, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=40, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=50, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=50, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    #experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=20, FUNNEL_REPARAMETRIZATION=False),
-    #experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=20, FUNNEL_REPARAMETRIZATION=False),
-    #experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=30, FUNNEL_REPARAMETRIZATION=False),
-    #experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=30, FUNNEL_REPARAMETRIZATION=False),
-    #experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.9, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    #experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.9, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    #experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    #experiment(true_sigma=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    ##experiment(true_sigma=0.1, N_patients=100, P=6, number_of_measurements=50, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    ##experiment(true_sigma=0.1, N_patients=100, P=6, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    ##experiment(true_sigma=0.1, N_patients=100, P=6, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    ##experiment(true_sigma=0.1, N_patients=100, P=6, number_of_measurements=5, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    ##experiment(true_sigma=0.1, N_patients=100, P=6, number_of_measurements=4, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
-    ##experiment(true_sigma=0.1, N_patients=100, P=6, number_of_measurements=3, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=True),
+    experiment(true_sigma_obs=1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    experiment(true_sigma_obs=10, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=20, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=True),
+    experiment(true_sigma_obs=1, N_patients=100, P=2, number_of_measurements=20, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    experiment(true_sigma_obs=10, N_patients=100, P=2, number_of_measurements=20, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=30, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=True),
+    experiment(true_sigma_obs=1, N_patients=100, P=2, number_of_measurements=30, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    experiment(true_sigma_obs=10, N_patients=100, P=2, number_of_measurements=30, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=40, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=True),
+    experiment(true_sigma_obs=1, N_patients=100, P=2, number_of_measurements=40, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    experiment(true_sigma_obs=10, N_patients=100, P=2, number_of_measurements=40, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=50, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=True),
+    experiment(true_sigma_obs=1, N_patients=100, P=2, number_of_measurements=50, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    experiment(true_sigma_obs=10, N_patients=100, P=2, number_of_measurements=50, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=20, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=20, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=30, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=30, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=40, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=40, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=50, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=50, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=20, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=20, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=30, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=30, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.9, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.9, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="normal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    #experiment(true_sigma_obs=0.1, N_patients=100, P=2, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    ##experiment(true_sigma_obs=0.1, N_patients=100, P=6, number_of_measurements=50, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    ##experiment(true_sigma_obs=0.1, N_patients=100, P=6, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    ##experiment(true_sigma_obs=0.1, N_patients=100, P=6, number_of_measurements=10, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    ##experiment(true_sigma_obs=0.1, N_patients=100, P=6, number_of_measurements=5, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    ##experiment(true_sigma_obs=0.1, N_patients=100, P=6, number_of_measurements=4, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
+    ##experiment(true_sigma_obs=0.1, N_patients=100, P=6, number_of_measurements=3, psi_prior="lognormal", N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, FUNNEL_REPARAMETRIZATION=False),
 ]
 
 def run_experiment(experiment):
-    true_sigma = experiment.true_sigma
+    true_sigma_obs = experiment.true_sigma_obs
     N_patients = experiment.N_patients
     P = experiment.P
     number_of_measurements = experiment.number_of_measurements
@@ -131,7 +145,7 @@ def run_experiment(experiment):
         pi_r_patient_i  = true_pi_r[training_instance_id]
         rho_r_patient_i = true_rho_r[training_instance_id]
         rho_s_patient_i = true_rho_s[training_instance_id]
-        these_parameters = Parameters(Y_0=psi_patient_i, pi_r=pi_r_patient_i, g_r=rho_r_patient_i, g_s=rho_s_patient_i, k_1=0, sigma=true_sigma)
+        these_parameters = Parameters(Y_0=psi_patient_i, pi_r=pi_r_patient_i, g_r=rho_r_patient_i, g_s=rho_s_patient_i, k_1=0, sigma=true_sigma_obs)
         this_patient = Patient(these_parameters, measurement_times, treatment_history, name=str(training_instance_id))
         patient_dictionary[training_instance_id] = this_patient
         #plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=str(training_instance_id), savename="./plots/Bayes_simulated_data/"+str(training_instance_id))
@@ -144,8 +158,8 @@ def run_experiment(experiment):
     idata = sample_from_full_model(X, patient_dictionary, name, N_samples=N_samples, N_tuning=N_tuning, target_accept=target_accept, psi_prior=psi_prior, max_treedepth=max_treedepth, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION)
 
     print("Done sampling")
-    lines = [('alpha', {}, true_alpha), ('beta_rho_s', {}, true_beta_rho_s), ('beta_rho_r', {}, true_beta_rho_r), ('beta_pi_r', {}, true_beta_pi_r), ('omega', {}, true_omega), ('sigma', {}, true_sigma)]
-    az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'), lines=lines, combined=True)
+    lines = [('alpha', {}, true_alpha), ('beta_rho_s', {}, true_beta_rho_s), ('beta_rho_r', {}, true_beta_rho_r), ('beta_pi_r', {}, true_beta_pi_r), ('omega', {}, true_omega), ('sigma_obs', {}, true_sigma_obs)]
+    az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma_obs'), lines=lines, combined=True)
     plt.savefig("./plots/posterior_plots/"+name+"-plot_posterior_group_parameters.png")
     #plt.show()
     plt.close()
