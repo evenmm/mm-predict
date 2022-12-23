@@ -574,7 +574,7 @@ def plot_to_compare_estimated_and_predicted_drug_dynamics(true_parameters, predi
     plt.close()
 
 # Plot posterior confidence intervals 
-def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pred_y_values, parameter_estimates=[], PLOT_POINT_ESTIMATES=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000):
+def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pred_y_values, parameter_estimates=[], PLOT_POINT_ESTIMATES=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000, n_chains=4, n_samples=1000):
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
     Mprotein_values = patient.get_Mprotein_values()
