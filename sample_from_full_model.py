@@ -12,7 +12,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 # Function argument shapes: 
 # X is an (N_patients, P) shaped pandas dataframe
 # patient dictionary contains N_patients patients in the same order as X
-def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, psi_prior="lognormal", FUNNEL_REPARAMETRIZATION=False):
+def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, psi_prior="lognormal", FUNNEL_REPARAMETRIZATION=False, method="HMC"):
     N_patients, P = X.shape
     P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
     X_not_transformed = X.copy()
@@ -20,6 +20,10 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
     Y = np.transpose(np.array([patient.Mprotein_values for _, patient in patient_dictionary.items()]))
     t = np.transpose(np.array([patient.measurement_times for _, patient in patient_dictionary.items()]))
     yi0 = np.maximum(1e-5, np.array([patient.Mprotein_values[0] for _, patient in patient_dictionary.items()]))
+    # Dimensions: 
+    # X: (P, N:cases)
+    # y: (M_max, N)
+    # t: (M_max, N)
 
     print("Max(Y):", np.amax(Y))
     print("Max(t):", np.amax(t))
@@ -111,7 +115,7 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
     # Visualize model
     import graphviz 
     gv = pm.model_to_graphviz(multiple_patients_model)
-    gv.render(filename='./graph_of_model', format="png", view=False)
+    gv.render(filename="./plots/posterior_plots/"+name+"_graph_of_model", format="png", view=False)
     # Sample from prior:
     with multiple_patients_model:
         prior_samples = pm.sample_prior_predictive(200)
@@ -138,5 +142,11 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
     plt.close()
     # Draw samples from posterior:
     with multiple_patients_model:
-        idata = pm.sample(N_samples, tune=N_tuning, random_seed=42, target_accept=target_accept, max_treedepth=max_treedepth)
+        if method == "ADVI":
+            inference = pm.ADVI()
+            approx = pm.fit(n=50000, method=inference)
+            trace = approx.sample(draws=5000)
+            idata = trace # Valid?                        
+        else: # if method == "HMC"
+            idata = pm.sample(N_samples, tune=N_tuning, random_seed=42, target_accept=target_accept, max_treedepth=max_treedepth)
     return idata

@@ -12,7 +12,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 print(f"Running on PyMC v{pm.__version__}")
 ##############################
 # Generate data
-true_sigma = 0.1
+true_sigma_obs = 0.1
 N_patients = 100
 
 # True parameter values
@@ -83,7 +83,7 @@ for training_instance_id in range(N_patients):
     pi_r_patient_i  = true_pi_r[training_instance_id]
     rho_r_patient_i = true_rho_r[training_instance_id]
     rho_s_patient_i = true_rho_s[training_instance_id]
-    these_parameters = Parameters(Y_0=psi_patient_i, pi_r=pi_r_patient_i, g_r=rho_r_patient_i, g_s=rho_s_patient_i, k_1=0, sigma=true_sigma)
+    these_parameters = Parameters(Y_0=psi_patient_i, pi_r=pi_r_patient_i, g_r=rho_r_patient_i, g_s=rho_s_patient_i, k_1=0, sigma=true_sigma_obs)
     this_patient = Patient(these_parameters, measurement_times, treatment_history, name=str(training_instance_id))
     patient_dictionary[training_instance_id] = this_patient
     #plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=str(training_instance_id), savename="./plots/Bayes_simulated_data/"+str(training_instance_id))
@@ -117,19 +117,19 @@ print(az.summary(idata, var_names=['theta_rho_r'], round_to=4)) #, 'rho_s', 'rho
 #print(az.summary(idata, var_names=['theta_rho_r'], round_to=4, stat_focus="median")) #, 'rho_s', 'rho_r', 'pi_r'], round_to=4), stat_focus="median")
 print(az.summary(idata, var_names=['theta_pi_r'], round_to=4)) #, 'rho_s', 'rho_r', 'pi_r'], round_to=4))
 #print(az.summary(idata, var_names=['theta_pi_r'], round_to=4, stat_focus="median")) #, 'rho_s', 'rho_r', 'pi_r'], round_to=4), stat_focus="median")
-print(az.summary(idata, var_names=['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'], round_to=4))
-print(az.summary(idata, var_names=['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'], round_to=4, stat_focus="median"))
+print(az.summary(idata, var_names=['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma_obs'], round_to=4))
+print(az.summary(idata, var_names=['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma_obs'], round_to=4, stat_focus="median"))
 
-print("Access posterior predictive samples directly:")
-print('alpha:', np.ravel(idata.posterior['alpha']))
-print('beta_rho_s:', np.ravel(idata.posterior['beta_rho_s']))
-print('beta_rho_r:', np.ravel(idata.posterior['beta_rho_r']))
-print('beta_pi_r:', np.ravel(idata.posterior['beta_pi_r']))
-print('omega:', np.ravel(idata.posterior['omega']))
-print('sigma:', np.ravel(idata.posterior['sigma']))
+#print("Access posterior predictive samples directly:")
+print('Posterior average of alpha:\n', np.mean(idata.posterior['alpha'], axis=(0,1)))
+print('\nPosterior average of beta_rho_s:\n', np.mean(idata.posterior['beta_rho_s'], axis=(0,1)))
+print('\nPosterior average of beta_rho_r:\n', np.mean(idata.posterior['beta_rho_r'], axis=(0,1)))
+print('\nPosterior average of beta_pi_r:\n', np.mean(idata.posterior['beta_pi_r'], axis=(0,1)))
+print('\nPosterior average of omega:\n', np.mean(idata.posterior['omega'], axis=(0,1)))
+print('\nPosterior average of sigma_obs:\n', np.mean(idata.posterior['sigma_obs:'], axis=(0,1)))
 
-lines = [('alpha', {}, true_alpha), ('beta_rho_s', {}, true_beta_rho_s), ('beta_rho_r', {}, true_beta_rho_r), ('beta_pi_r', {}, true_beta_pi_r), ('omega', {}, true_omega), ('sigma', {}, true_sigma)]
-az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma'), lines=lines, combined=True)
+lines = [('alpha', {}, true_alpha), ('beta_rho_s', {}, true_beta_rho_s), ('beta_rho_r', {}, true_beta_rho_r), ('beta_pi_r', {}, true_beta_pi_r), ('omega', {}, true_omega), ('sigma_obs', {}, true_sigma_obs)]
+az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma_obs'), lines=lines, combined=True)
 plt.savefig("./plots/posterior_plots/plot_posterior_group_parameters.png")
 plt.show()
 plt.close()

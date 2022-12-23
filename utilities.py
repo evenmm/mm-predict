@@ -573,6 +573,75 @@ def plot_to_compare_estimated_and_predicted_drug_dynamics(true_parameters, predi
     #plt.show()
     plt.close()
 
+# Plot posterior confidence intervals 
+def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pred_y_values, parameter_estimates=[], PLOT_POINT_ESTIMATES=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000):
+    measurement_times = patient.get_measurement_times()
+    treatment_history = patient.get_treatment_history()
+    Mprotein_values = patient.get_Mprotein_values()
+    time_zero = min(treatment_history[0].start, measurement_times[0])
+    time_max = max(treatment_history[-1].end, int(measurement_times[-1]))
+    plotting_times = np.linspace(time_zero, time_max, y_resolution)
+    
+    fig, ax1 = plt.subplots()
+    ax1.patch.set_facecolor('none')
+
+    if PLOT_POINT_ESTIMATES:
+        # Plot true M protein values according to parameter estimates
+        plotting_mprotein_values = measure_Mprotein_noiseless(parameter_estimates, plotting_times, treatment_history)
+        # Count resistant part
+        resistant_parameters = Parameters((parameter_estimates.Y_0*parameter_estimates.pi_r), 1, parameter_estimates.g_r, parameter_estimates.g_s, parameter_estimates.k_1, parameter_estimates.sigma)
+        plotting_resistant_mprotein_values = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
+        # Plot resistant M protein
+        ax1.plot(plotting_times, plotting_resistant_mprotein_values, linestyle='-', marker='', zorder=3, color='r', label="Estimated M protein (resistant)")
+        # Plot total M protein
+        ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='k', label="Estimated M protein (total)")
+
+    # Plot posterior confidence intervals 
+    # 95 % empirical confidence interval
+    color_array = ["#fbd1b4", "#f89856", "#e36209"] #["#fbd1b4", "#fab858", "#f89856", "#f67c27", "#e36209"] #https://icolorpalette.com/color/rust-orange
+    for index, confidence_level in enumerate([0.05, 0.25, 0.45]):
+        # Get index to find right value 
+        lower_index = int(confidence_level*n_chains*n_samples)
+        upper_index = int((1-confidence_level)*n_chains*n_samples)
+        # index at intervals to get 95 % limit value
+        lower_limits = sorted_pred_y_values[lower_index,training_instance_id,:]
+        upper_limits = sorted_pred_y_values[upper_index,training_instance_id,:]       #color=color_array[index]
+        ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.copper(1-confidence_level), label='%3.0f %% confidence band on M protein value' % (100*(1-2*confidence_level)))
+
+    # Plot M protein observations
+    ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein") #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
+
+    # Plot treatments
+    plotheight = 1
+    maxdrugkey = 0
+    ax2 = ax1.twinx() 
+    for treat_index in range(len(treatment_history)):
+        this_treatment = treatment_history[treat_index]
+        if this_treatment.id != 0:
+            treatment_duration = this_treatment.end - this_treatment.start
+            if this_treatment.id > maxdrugkey:
+                maxdrugkey = this_treatment.id
+            if PLOT_TREATMENTS:
+                ax2.add_patch(Rectangle((this_treatment.start, this_treatment.id - plotheight/2), treatment_duration, plotheight, zorder=2, color="lightskyblue")) #color=treat_colordict[treat_line_id]))
+
+    ax1.set_title(plot_title)
+    ax1.set_xlabel("Days")
+    ax1.set_ylabel("Serum Mprotein (g/dL)")
+    ax1.set_ylim(bottom=0, top=(1.1*max(Mprotein_values)))
+    #ax1.set_xlim(left=time_zero)
+    ax2.set_ylabel("Treatment id for blue region")
+    ax2.set_yticks([maxdrugkey])
+    ax2.set_yticklabels([maxdrugkey])
+    ax2.set_ylim(bottom=maxdrugkey-plotheight, top=maxdrugkey+plotheight)
+    #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
+    ax1.set_zorder(ax1.get_zorder()+3)
+    ax1.legend()
+    #ax2.legend() # For drugs, no handles with labels found to put in legend.
+    fig.tight_layout()
+    plt.savefig(savename)
+    plt.show()
+    plt.close()
+
 #####################################
 # Inference
 #####################################

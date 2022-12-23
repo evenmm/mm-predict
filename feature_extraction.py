@@ -11,7 +11,8 @@ from utilities import *
 start_time = time.time()
 warnings.simplefilter("ignore")
 
-def feature_extraction(training_instance_dict):
+def feature_extraction(training_instance_dict, DATA_CHOICE="EHR_only"):
+    print(len(training_instance_dict.keys()), "cases in training_instance_dict")
     training_instance_id_list = [key for key in training_instance_dict.keys()] 
     df_mprotein_and_dates = pd.read_pickle("./binaries_and_pickles/df_mprotein_and_dates.pkl")
     df_drugs_and_dates = pd.read_pickle("./binaries_and_pickles/df_drugs_and_dates.pkl")
@@ -203,7 +204,8 @@ def feature_extraction(training_instance_dict):
     df_clinical_covariates['01Bor'] = df_clinical_covariates['01Bor'].astype(int)
     df_clinical_covariates['01Melph'] = df_clinical_covariates['01Melph'].astype(int)
     df_clinical_covariates['01Cyclo'] = df_clinical_covariates['01Cyclo'].astype(int)
-    df_clinical_covariates = df_clinical_covariates[['ecog', 'DEMOG_PATIENTAGE', 'DEMOG_HEIGHT', 'DEMOG_WEIGHT', 'D_PT_race', 'D_PT_ethnic', 'D_PT_gender', '01Len', '01Dex', '01Bor', '01Melph', '01Cyclo', 'time_since_diagnosis']]
+    # drop 'PUBLIC_ID'
+    df_clinical_covariates = df_clinical_covariates[['training_instance_id', 'ecog', 'DEMOG_PATIENTAGE', 'DEMOG_HEIGHT', 'DEMOG_WEIGHT', 'D_PT_race', 'D_PT_ethnic', 'D_PT_gender', '01Len', '01Dex', '01Bor', '01Melph', '01Cyclo', 'time_since_diagnosis']]
     values = {'ecog':0, 'DEMOG_PATIENTAGE':0, 'DEMOG_HEIGHT':0, 'DEMOG_WEIGHT':0, 'D_PT_race':1.1, 'D_PT_ethnic':1.1, 'D_PT_gender':1.5}
     df_clinical_covariates = df_clinical_covariates.fillna(value=values)
     print("Number of clinical covariates including drug indicators:", len(df_clinical_covariates.columns))
@@ -217,21 +219,66 @@ def feature_extraction(training_instance_dict):
     # Imputation of missing cases must be done after merging to see which patients were not included here
     COMMPASS_current_name_list = [elem[0] for elem in training_instance_dict.values()]
     EHR_name_list = [elem.replace("_1_BM" ,"", 1) for elem in df_EHR.loc[:,"sample"]]
+    df_EHR.rename(columns={'sample': 'PUBLIC_ID'}, inplace=True)
     #print("\nCOMMPASS_current_name_list:\n", len(COMMPASS_current_name_list))
-    
+
     #print("\nEHR_name_list:\n", len(EHR_name_list))
     #print([(elem, (elem not in COMMPASS_current_name_list)) for elem in df_EHR.loc[:,"sample"]])
     #print([(elem not in COMMPASS_current_name_list) for elem in EHR_name_list])
-    print("How many from EHR not in current COMMPASS name list (due to inclusion criteria not being satisfied)\n:", sum([(elem not in COMMPASS_current_name_list) for elem in EHR_name_list]))
+    print("How many from EHR not in current COMMPASS name list (due to inclusion criteria not being satisfied):", sum([(elem not in COMMPASS_current_name_list) for elem in EHR_name_list]))
     print("How many from current COMMPASS not in EHR name list:", sum([(elem not in EHR_name_list) for elem in COMMPASS_current_name_list]))
     print("How many overlapping:", sum([(elem in EHR_name_list) for elem in COMMPASS_current_name_list]))
+
+    df_EHR_processed = pd.DataFrame()
+    for training_instance_id, value in training_instance_dict.items():
+        patient_name = value[0]
+        
+        single_entry = df_EHR[df_EHR["PUBLIC_ID"] == patient_name + "_1_BM"]
+        single_entry["training_instance_id"] = training_instance_id
+        df_EHR_processed = pd.concat([df_EHR_processed, single_entry])
+    # Sort by training_instance_id, drop that and PUBLIC_ID. Fillna values
+    df_EHR_processed = df_EHR_processed.sort_values(by=['training_instance_id'])
+    df_EHR_processed.reset_index(drop=True, inplace=True)
+    df_EHR = df_EHR_processed
 
     # Sanitize data types by excluding Age and Gender which were already included, and removing "sample", which is name
     # Age is a categorical variable: '<=70' or '>70'
     # D_PT_gender is 'Male'/'Female'
     # 'sample' is a string, the patient name
-    df_EHR.drop(columns=["sample","D_PT_gender","Age"], inplace=True)
+    df_EHR.drop(columns=["D_PT_gender","Age"], inplace=True)
 
+    print("Standardizing some features...")
+    for colname in ["D_PT_age", "oscdy", "pfscdy"]: 
+        df_EHR[colname] = ( df_EHR[colname] - df_EHR[colname].mean() ) / df_EHR[colname].std()
+    #print("Normalizing some...")
+    #for colname in ["pfscdy"]: # Putting them between -1 and 1
+    #    df_X_covariates[colname] = -0.5 + ( df_X_covariates[colname] - df_X_covariates[colname].min() ) / ( df_X_covariates[colname].max() - df_X_covariates[colname].min() )
+
+    ######################################################################
+    # Add FISH
+    ######################################################################
+    filename = './COMMPASS_data/611e776c06f8c500013f9448_SeqFISH Files_MMRF_CoMMpass_IA17_genome_gatk_cna_seqFISH.tsv'
+    df_FISH = pd.read_csv(filename, sep="\t")
+    # Imputation of missing cases must be done after merging to see which patients were not included here
+    COMMPASS_current_name_list = [elem[0] for elem in training_instance_dict.values()]
+    FISH_name_list = [elem.replace("_1_BM_CD138pos" ,"", 1) for elem in df_FISH.loc[:,"SAMPLE"]]
+    print("How many from FISH not in current COMMPASS name list (due to inclusion criteria not being satisfied):", sum([(elem not in COMMPASS_current_name_list) for elem in FISH_name_list]))
+    print("How many from current COMMPASS not in FISH name list:", sum([(elem not in FISH_name_list) for elem in COMMPASS_current_name_list]))
+    print("How many overlapping (FISH/prev COMPASS):", sum([(elem in FISH_name_list) for elem in COMMPASS_current_name_list]))
+
+    df_FISH.rename(columns={'SAMPLE': 'PUBLIC_ID'}, inplace=True)
+    df_FISH_processed = pd.DataFrame()
+    for training_instance_id, value in training_instance_dict.items():
+        patient_name = value[0]
+        
+        single_entry = df_FISH[df_FISH["PUBLIC_ID"] == patient_name + "_1_BM_CD138pos"]
+        single_entry["training_instance_id"] = training_instance_id
+        df_FISH_processed = pd.concat([df_FISH_processed, single_entry])
+    # Sort by training_instance_id, drop that and PUBLIC_ID. Fillna values
+    df_FISH_processed = df_FISH_processed.sort_values(by=['training_instance_id'])
+    df_FISH_processed.reset_index(drop=True, inplace=True)
+    df_FISH = df_FISH_processed
+    #print(df_FISH.head(n=10))
     # Make sure we actually join on the patient name. The order is the same as it is.
 
     ######################################################################
@@ -266,7 +313,14 @@ def feature_extraction(training_instance_dict):
     print("Removing the homebrewed ones...")
     df_X_covariates.drop(columns=['ecog', 'DEMOG_PATIENTAGE', 'DEMOG_HEIGHT', 'DEMOG_WEIGHT', 'D_PT_race', 'D_PT_ethnic', 'D_PT_gender', '01Len', '01Dex', '01Bor', '01Melph', '01Cyclo', 'time_since_diagnosis'], inplace=True)
     # EHR:
-    df_X_covariates = df_X_covariates.join(df_EHR, how='left', lsuffix='_left', rsuffix='_right') # "D_PT_gender" was present in both: This preserves both, suffixed by _left/_right
+    #print(df_EHR.head(n=10))
+    #print(df_X_covariates.head(n=10))
+    # THIS IS THE ONE: 
+    if DATA_CHOICE == "EHR_only":
+        df_X_covariates = df_X_covariates.join(df_EHR, how='inner', on='training_instance_id', lsuffix='_left', rsuffix='_right') # "D_PT_gender" was present in both: This preserves both, suffixed by _left/_right
+    elif DATA_CHOICE == "FISH_only":
+        df_X_covariates = df_X_covariates.join(df_FISH, how='inner', on='training_instance_id', lsuffix='_left', rsuffix='_right') # "D_PT_gender" was present in both: This preserves both, suffixed by _left/_right
+    df_X_covariates.drop(columns=['training_instance_id', 'training_instance_id_left', 'training_instance_id_right', 'PUBLIC_ID'], inplace=True)
     ## This check reveals that they are sorted in the same way: 
     #df_X_covariates = df_X_covariates[["D_PT_gender_left", "D_PT_gender_left"]]
     #print(df_X_covariates.head(n=50))
@@ -287,35 +341,26 @@ def feature_extraction(training_instance_dict):
     print("Any nan values in df_clinical_covariates?",df_clinical_covariates.isnull().values.any())
     answer_to_question = df_X_covariates.isnull().values.any()
     print("Any nan values in df_X_covariates?", answer_to_question)
-    if answer_to_question == True:
-        print("Which are nan values in df_EHR?\n",df_X_covariates.isnull())
+    #if answer_to_question == True:
+    #    print("Which are nan values in df_EHR?\n",df_X_covariates.isnull())
     
-    print("These columns have nan values:", df_X_covariates.columns[df_X_covariates.isna().any()].tolist())
+    #print("These columns have nan values:", df_X_covariates.columns[df_X_covariates.isna().any()].tolist())
     for colname in df_X_covariates.columns:
         the_nan_sum = df_X_covariates[colname].isnull().sum()
         if the_nan_sum > 0:
-            print(colname, "has", the_nan_sum, "nan values.")
+            #print(colname, "has", the_nan_sum, "nan values.")
             mean_value = df_X_covariates[colname].mean()
             df_X_covariates[colname].fillna(value=mean_value, inplace=True)
     print("Missing data filled with naive means not per group")
-    print("These columns have nan values:", df_X_covariates.columns[df_X_covariates.isna().any()].tolist())
+    #print("These columns have nan values:", df_X_covariates.columns[df_X_covariates.isna().any()].tolist())
 
     # Standardization: 
-    print("Before standardizing:")
     #hist = df_X_covariates.hist(column="D_PT_age")
     #plt.show()
     #hist = df_X_covariates.hist(column="oscdy")
     #plt.show()
     #hist = df_X_covariates.hist(column="pfscdy")
     #plt.show()
-
-    print(df_X_covariates.head(n=10))
-    print("Standardizing some...")
-    for colname in ["D_PT_age", "oscdy", "pfscdy"]: 
-        df_X_covariates[colname] = ( df_X_covariates[colname] - df_X_covariates[colname].mean() ) / df_X_covariates[colname].std()
-    #print("Normalizing some...")
-    #for colname in ["pfscdy"]: # Putting them between -1 and 1
-    #    df_X_covariates[colname] = -0.5 + ( df_X_covariates[colname] - df_X_covariates[colname].min() ) / ( df_X_covariates[colname].max() - df_X_covariates[colname].min() )
 
     print("Total number of covariates in df_X:", len(df_X_covariates.columns))
     print(df_X_covariates.head(n=10))
@@ -337,4 +382,4 @@ def feature_extraction(training_instance_dict):
 if __name__ == "__main__":
     # Load period definitions
     training_instance_dict = np.load("./binaries_and_pickles/training_instance_dict.npy", allow_pickle=True).item()
-    df_X_covariates = feature_extraction(training_instance_dict)
+    df_X_covariates = feature_extraction(training_instance_dict, DATA_CHOICE="FISH_only")

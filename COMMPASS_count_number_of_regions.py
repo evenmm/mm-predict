@@ -4,6 +4,12 @@
 #   Perform inference of parameter set in each region
 from utilities import *
 
+minimum_number_of_measurements = 4
+threshold_for_closeness_for_M_protein_at_start = 60
+
+# This one must be very outdated 
+
+
 # M protein data
 filename = './COMMPASS_data/CoMMpass_IA17_FlatFiles/MMRF_CoMMpass_IA17_PER_PATIENT_VISIT_V2.tsv'
 df = pd.read_csv(filename, sep='\t')
@@ -40,7 +46,7 @@ for index, row in df_mprotein_and_dates.iterrows():
 print("Adding drugs")
 # Add drugs 
 filename = './COMMPASS_data/CoMMpass_IA17_FlatFiles/MMRF_CoMMpass_IA17_STAND_ALONE_TREATMENT_REGIMEN_V2.tsv'
-df = pd.read_csv(filename, sep='\t')
+df = pd.read_csv(filename, sep='\t', encoding='cp1252')
 df_drugs_and_dates = df[[
     'PUBLIC_ID', 'MMTX_THERAPY', 
     'startday', 'stopday'
@@ -191,8 +197,8 @@ COMMPASS_patient_dictionary["MMRF_1143"].print()
 # Simple exponential growth model with 2 populations, where only one is affected by treatment
 # The parameters we estimate are 
 #               Y_0, pi_r,   g_r,   g_s,  k_1,  sigma
-lb = np.array([  0,    0,  0.00,  0.00, 0.00]) #, 10e-6])
-ub = np.array([100,    1,  2e-1,  1e-1, 1e-0]) #, 10e4])
+lb = np.array([  0,    0,  0.00,  0.00, 2e-1]) #, 10e-6])
+ub = np.array([100,    1,  2e-1,  lb[4], 1e-0]) #, 10e4])
 #lb = np.array([  0,    0,  0.00, -1e-0])
 #ub = np.array([100,    1,  2e-1,  0.00])
 # Y_0=50, pi_r=0.10, g_r=2e-3, g_s=1e-2, k_1=3e-2
@@ -209,8 +215,6 @@ training_instance_id = 0
 training_instance_dict = {} # A dictionary mapping training_instance_id to the patient name and the start and end of the interval with the treatment of interest 
 Y_parameters = []
 Y_increase_or_not = np.array([])
-minimum_number_of_measurements = 3
-threshold_for_closeness_for_M_protein_at_start = 60
 
 #treatment_id_of_interest = 15 # Dex+Len+Bor #COMMPASS_patient_dictionary["MMRF_1293"].treatment_history[5].id
 # Iterate over all patients, look at their treatment periods one by one and check if it qualifies as a training item 
@@ -221,6 +225,8 @@ for name, patient in COMMPASS_patient_dictionary.items():
         for outer_index, outer_treatment in enumerate(patient.treatment_history): # Outer loop so we pass each of them only once 
             if outer_treatment.id in range(1,unique_treat_counter):
                 treatment_id_of_interest = outer_treatment.id
+
+                # This one must be very outdated 
 
                 # Find periods of interest by looking through patient history 
                 period_start = np.nan
