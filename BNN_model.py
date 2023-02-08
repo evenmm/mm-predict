@@ -12,7 +12,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 # Function argument shapes: 
 # X is an (N_patients, P) shaped pandas dataframe
 # patient dictionary contains N_patients patients in the same order as X
-def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False):
+def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "iso_normal"):
     N_patients, P = X.shape
     P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
     X_not_transformed = X.copy()
@@ -25,8 +25,6 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
     # y: (M_max, N)
     # t: (M_max, N)
 
-    print("Max(Y):", np.amax(Y))
-    print("Max(t):", np.amax(t))
     viz_Y = Y[Y<250]
     plt.figure()
     sns.distplot(Y, hist=True, kde=True, 
@@ -49,8 +47,6 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
     n_hidden = 3
     # Initialize random weights between each layer
     init_1 = np.random.randn(X.shape[0], n_hidden) #.astype(floatX)
-    print(X.shape[0])
-    init_2 = np.random.randn(n_hidden, n_hidden) #.astype(floatX)
     init_out = np.random.randn(n_hidden) #.astype(floatX)
 
     with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as neural_net_model:
@@ -67,12 +63,6 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
         # Weights from input to hidden layer
         # Funnel reparametrized weights: 
         sigma_weights = pm.HalfNormal("sigma_weights", sigma=1)
-        #sigma_weights_in_rho_s = pm.HalfNormal("sigma_weights_in_rho_s", sigma=1) #, shape=(X.shape[0], n_hidden))
-        #sigma_weights_in_rho_r = pm.HalfNormal("sigma_weights_in_rho_r", sigma=1) #, shape=(X.shape[0], n_hidden))
-        #sigma_weights_in_pi_r = pm.HalfNormal("sigma_weights_in_pi_r", sigma=1) #, shape=(X.shape[0], n_hidden))
-        #sigma_weights_out_rho_s = pm.HalfNormal("sigma_weights_1_2_rho_s", sigma=1) #, shape=(n_hidden, n_hidden))
-        #sigma_weights_out_rho_r = pm.HalfNormal("sigma_weights_1_2_rho_r", sigma=1) #, shape=(n_hidden, n_hidden))
-        #sigma_weights_out_pi_r = pm.HalfNormal("sigma_weights_1_2_pi_r", sigma=1) #, shape=(n_hidden, n_hidden))
         if FUNNEL_WEIGHTS == True:
             # Weights input to 1st layer
             weights_in_rho_s_offset = pm.Normal("weights_in_rho_s_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
@@ -99,18 +89,19 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
             weights_out_pi_r = pm.Normal('weights_out_pi_r', 0, sigma=sigma_weights, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_pi_r
         # Original was with all sigma_weights = 1 
         
-        # intercepts for each node between each layer 
-        sigma_bias = pm.HalfNormal("sigma_bias", sigma=1, shape=(1,n_hidden))
+        # offsets for each node between each layer 
+        sigma_bias_in = pm.HalfNormal("sigma_bias_in", sigma=1, shape=(1,n_hidden))
         #sigma_bias_in_rho_s = pm.HalfNormal("sigma_bias_in_rho_s", sigma=1, shape=(1,n_hidden))
         #sigma_bias_in_rho_r = pm.HalfNormal("sigma_bias_in_rho_r", sigma=1, shape=(1,n_hidden))
         #sigma_bias_in_pi_r = pm.HalfNormal("sigma_bias_in_pi_r", sigma=1, shape=(1,n_hidden))
-        bias_in_rho_s = pm.Normal("bias_in_rho_s", mu=0, sigma=sigma_bias, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_s
-        bias_in_rho_r = pm.Normal("bias_in_rho_r", mu=0, sigma=sigma_bias, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_r
-        bias_in_pi_r = pm.Normal("bias_in_pi_r", mu=0, sigma=sigma_bias, shape=(1,n_hidden)) # sigma=sigma_bias_in_pi_r
+        bias_in_rho_s = pm.Normal("bias_in_rho_s", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_s
+        bias_in_rho_r = pm.Normal("bias_in_rho_r", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_r
+        bias_in_pi_r = pm.Normal("bias_in_pi_r", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_pi_r
         # Should include this! 
-        #bias_out_rho_s = pm.Normal("bias_out_rho_s", mu=0, sigma=sigma_bias, shape=1)
-        #bias_out_rho_r = pm.Normal("bias_out_rho_r", mu=0, sigma=sigma_bias, shape=1)
-        #bias_out_pi_r = pm.Normal("bias_out_pi_r", mu=0, sigma=sigma_bias, shape=1)
+        sigma_bias_out = pm.HalfNormal("sigma_bias_out", sigma=1)
+        bias_out_rho_s = pm.Normal("bias_out_rho_s", mu=0, sigma=sigma_bias_out)
+        bias_out_rho_r = pm.Normal("bias_out_rho_r", mu=0, sigma=sigma_bias_out)
+        bias_out_pi_r = pm.Normal("bias_out_pi_r", mu=0, sigma=sigma_bias_out)
 
         # Calculate Y using neural net 
         # Leaky RELU activation
@@ -122,17 +113,12 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
         act_1_pi_r = pm.math.switch(pre_act_1_pi_r > 0, pre_act_1_pi_r, pre_act_1_pi_r * 0.01)
 
         # Output activation function is just unit transform for prediction model
-        act_out_rho_s = pm.math.dot(act_1_rho_s, weights_out_rho_s) #+ bias_out_rho_s
-        act_out_rho_r = pm.math.dot(act_1_rho_r, weights_out_rho_r) #+ bias_out_rho_r
-        act_out_pi_r = pm.math.dot(act_1_pi_r, weights_out_pi_r) #+ bias_out_pi_r
+        act_out_rho_s = pm.math.dot(act_1_rho_s, weights_out_rho_s) + bias_out_rho_s
+        act_out_rho_r = pm.math.dot(act_1_rho_r, weights_out_rho_r) + bias_out_rho_r
+        act_out_pi_r = pm.math.dot(act_1_pi_r, weights_out_pi_r) + bias_out_pi_r
 
         # Latent variables theta
         omega = pm.HalfNormal("omega",  sigma=1, shape=3) # Patient variability in theta (std)
-        ## Without random effects:
-        #theta_rho_s = pm.Deterministic("theta_rho_s", (alpha[0] + act_out_rho_s))
-        #theta_rho_r = pm.Deterministic("theta_rho_r", (alpha[1] + act_out_rho_r))
-        #theta_pi_r  = pm.Deterministic("theta_pi_r",  (alpha[2] + act_out_pi_r))
-        # Original: 
         if FUNNEL_REPARAMETRIZATION == True: 
             # Reparametrized to escape/explore the funnel of Hell (https://twiecki.io/blog/2017/02/08/bayesian-hierchical-non-centered/):
             theta_rho_s_offset = pm.Normal('theta_rho_s_offset', mu=0, sigma=1, shape=N_patients)
