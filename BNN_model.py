@@ -12,7 +12,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 # Function argument shapes: 
 # X is an (N_patients, P) shaped pandas dataframe
 # patient dictionary contains N_patients patients in the same order as X
-def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "iso_normal"):
+def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "iso_normal", SAVING=False):
     N_patients, P = X.shape
     P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
     X_not_transformed = X.copy()
@@ -31,14 +31,16 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
              bins=int(180/5), color = 'darkblue', 
              hist_kws={'edgecolor':'black'},
              kde_kws={'linewidth': 1, 'gridsize':100})
-    plt.savefig("./plots/posterior_plots/"+name+"-plot_density.png")
+    if SAVING:
+        plt.savefig("./plots/posterior_plots/"+name+"-plot_density.png")
     plt.close
     plt.figure()
     sns.distplot(viz_Y, hist=True, kde=True, 
              bins=int(180/5), color = 'darkblue', 
              hist_kws={'edgecolor':'black'},
              kde_kws={'linewidth': 1, 'gridsize':100})
-    plt.savefig("./plots/posterior_plots/"+name+"-plot_density_lessthan_250.png")
+    if SAVING:
+        plt.savefig("./plots/posterior_plots/"+name+"-plot_density_lessthan_250.png")
     plt.close
     if psi_prior not in ["lognormal", "normal"]:
         print("Unknown prior option specified for psi; Using 'lognormal' prior")
@@ -173,7 +175,8 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
     plt.title("Samples from prior compared to observations, for Y<plotlimit_prior")
     plt.xlabel("Y (M protein)")
     plt.ylabel("Frequency")
-    plt.savefig("./plots/posterior_plots/"+name+"-plot_prior_samples_below_"+str(plotlimit_prior)+".png")
+    if SAVING:
+        plt.savefig("./plots/posterior_plots/"+name+"-plot_prior_samples_below_"+str(plotlimit_prior)+".png")
     plt.close()
     # All samples: 
     plt.figure()
@@ -182,6 +185,7 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
     plt.title("Samples from prior compared to observations")
     plt.xlabel("Y (M protein)")
     plt.ylabel("Frequency")
-    plt.savefig("./plots/posterior_plots/"+name+"-plot_prior_samples.png")
+    if SAVING:
+        plt.savefig("./plots/posterior_plots/"+name+"-plot_prior_samples.png")
     plt.close()
     return neural_net_model

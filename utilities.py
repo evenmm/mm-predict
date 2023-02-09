@@ -599,14 +599,14 @@ def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pr
     # Plot posterior confidence intervals 
     # 95 % empirical confidence interval
     color_array = ["#fbd1b4", "#f89856", "#e36209"] #["#fbd1b4", "#fab858", "#f89856", "#f67c27", "#e36209"] #https://icolorpalette.com/color/rust-orange
-    for index, confidence_level in enumerate([0.05, 0.25, 0.45]):
+    for index, critical_value in enumerate([0.05, 0.25, 0.45]): # Corresponding to confidence levels 90, 50, and 10
         # Get index to find right value 
-        lower_index = int(confidence_level*n_chains*n_samples)
-        upper_index = int((1-confidence_level)*n_chains*n_samples)
+        lower_index = int(critical_value*n_chains*n_samples)
+        upper_index = int((1-critical_value)*n_chains*n_samples)
         # index at intervals to get 95 % limit value
         lower_limits = sorted_pred_y_values[lower_index,training_instance_id,:]
         upper_limits = sorted_pred_y_values[upper_index,training_instance_id,:]       #color=color_array[index]
-        ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.copper(1-confidence_level), label='%3.0f %% confidence band on M protein value' % (100*(1-2*confidence_level)))
+        ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.copper(1-critical_value), label='%3.0f %% confidence band on M protein value' % (100*(1-2*critical_value)))
 
     # Plot M protein observations
     ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein") #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
@@ -666,28 +666,28 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
 
     # Plot posterior confidence intervals for Resistant M protein
     # 95 % empirical confidence interval
-    color_array = ["#c30101", "#940000", "#6f0000"] #"#560d0d" #https://www.color-hex.com/color-palette/8243
     if len(sorted_resistant_mprotein) > 0: 
-        for index, confidence_level in enumerate([0.05, 0.25, 0.45]):
+        for index, critical_value in enumerate([0.05, 0.25, 0.45]): # Corresponding to confidence levels 90, 50, and 10
             # Get index to find right value 
-            lower_index = int(confidence_level*n_chains*n_samples)
-            upper_index = int((1-confidence_level)*n_chains*n_samples)
+            lower_index = int(critical_value*n_chains*n_samples)
+            upper_index = int((1-critical_value)*n_chains*n_samples)
             # index at intervals to get 95 % limit value
             lower_limits = sorted_resistant_mprotein[lower_index,:]
-            upper_limits = sorted_resistant_mprotein[upper_index,:]       #color=color_array[index]
-            ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.copper(1-confidence_level), label='%3.0f %% confidence band on M protein value' % (100*(1-2*confidence_level)))
+            upper_limits = sorted_resistant_mprotein[upper_index,:]
+            ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.copper(1-critical_value), label='%3.0f %% confidence band on resistant M protein' % (100*(1-2*critical_value)))
 
     # Plot posterior confidence intervals for total M protein
     # 95 % empirical confidence interval
     color_array = ["#fbd1b4", "#f89856", "#e36209"] #["#fbd1b4", "#fab858", "#f89856", "#f67c27", "#e36209"] #https://icolorpalette.com/color/rust-orange
-    for index, confidence_level in enumerate([0.05, 0.25, 0.45]):
+    for index, critical_value in enumerate([0.05, 0.25, 0.45]): # Corresponding to confidence levels 90, 50, and 10
         # Get index to find right value 
-        lower_index = int(confidence_level*n_chains*n_samples)
-        upper_index = int((1-confidence_level)*n_chains*n_samples)
+        lower_index = int(critical_value*n_chains*n_samples)
+        upper_index = int((1-critical_value)*n_chains*n_samples)
         # index at intervals to get 95 % limit value
         lower_limits = sorted_local_pred_y_values[lower_index,:]
-        upper_limits = sorted_local_pred_y_values[upper_index,:]       #color=color_array[index]
-        ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.copper(1-confidence_level), label='%3.0f %% confidence band on M protein value' % (100*(1-2*confidence_level)))
+        upper_limits = sorted_local_pred_y_values[upper_index,:]
+        shade_array = [0.7, 0.5, 0.35]
+        ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.bone(shade_array[index]), label='%3.0f %% confidence band on M protein value' % (100*(1-2*critical_value)))
 
     # Plot M protein observations
     ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein") #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
@@ -695,7 +695,7 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
     # Plot treatments
     plotheight = 1
     maxdrugkey = 0
-    ax2 = ax1.twinx() 
+    ax2 = ax1.twinx()
     for treat_index in range(len(treatment_history)):
         this_treatment = treatment_history[treat_index]
         if this_treatment.id != 0:
