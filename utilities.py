@@ -351,6 +351,46 @@ def measure_Mprotein_naive(params, measurement_times, treatment_history):
     return Mprotein_values
     #return params.Y_0 * params.pi_r * np.exp(params.g_r * measurement_times) + params.Y_0 * (1-params.pi_r) * np.exp((params.g_s - params.k_1) * measurement_times)
 
+def generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_local, P, get_expected_theta_from_X, true_omega, true_omega_for_psi, seed, RANDOM_EFFECTS):
+    np.random.seed(seed)
+    #X_mean = np.repeat(0,P)
+    #X_std = np.repeat(0.5,P)
+    #X = np.random.normal(X_mean, X_std, size=(N_patients_local,P))
+    X = np.random.uniform(-1, 1, size=(N_patients_local,P))
+    X = pd.DataFrame(X, columns = ["Covariate "+str(ii+1) for ii in range(P)])
+
+    expected_theta_1, expected_theta_2, expected_theta_3 = get_expected_theta_from_X(X)
+
+    if RANDOM_EFFECTS:
+        true_theta_rho_s = np.random.normal(expected_theta_1, true_omega[0])
+        true_theta_rho_r = np.random.normal(expected_theta_2, true_omega[1])
+        true_theta_pi_r  = np.random.normal(expected_theta_3, true_omega[2])
+    else:
+        true_theta_rho_s = expected_theta_1
+        true_theta_rho_r = expected_theta_2
+        true_theta_pi_r  = expected_theta_3
+
+    psi_population = 50
+    true_theta_psi = np.random.normal(np.log(psi_population), true_omega_for_psi, size=N_patients_local)
+    true_rho_s = - np.exp(true_theta_rho_s)
+    true_rho_r = np.exp(true_theta_rho_r)
+    true_pi_r  = 1/(1+np.exp(-true_theta_pi_r))
+    true_psi = np.exp(true_theta_psi)
+
+    parameter_dictionary = {}
+    patient_dictionary = {}
+    for training_instance_id in range(N_patients_local):
+        psi_patient_i   = true_psi[training_instance_id]
+        pi_r_patient_i  = true_pi_r[training_instance_id]
+        rho_r_patient_i = true_rho_r[training_instance_id]
+        rho_s_patient_i = true_rho_s[training_instance_id]
+        these_parameters = Parameters(Y_0=psi_patient_i, pi_r=pi_r_patient_i, g_r=rho_r_patient_i, g_s=rho_s_patient_i, k_1=0, sigma=true_sigma_obs)
+        this_patient = Patient(these_parameters, measurement_times, treatment_history, name=str(training_instance_id))
+        patient_dictionary[training_instance_id] = this_patient
+        parameter_dictionary[training_instance_id] = these_parameters
+        #plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=str(training_instance_id), savename="./plots/Bayes_simulated_data/"+str(training_instance_id)
+    return X, patient_dictionary, parameter_dictionary, expected_theta_1, true_theta_rho_s, true_rho_s
+
 #####################################
 # Plotting
 #####################################
@@ -419,12 +459,12 @@ def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parame
     #ax2.legend() # For drugs, no handles with labels found to put in legend.
     fig.tight_layout()
     if savename != 0:
-        plt.savefig(savename)
+        plt.savefig(savename,dpi=300)
     else:
         if PLOT_ESTIMATES:
-            plt.savefig("./patient_truth_and_observations_with_model_fit"+plot_title+".pdf")
+            plt.savefig("./patient_truth_and_observations_with_model_fit"+plot_title+".pdf",dpi=300)
         else:
-            plt.savefig("./patient_truth_and_observations"+plot_title+".pdf")
+            plt.savefig("./patient_truth_and_observations"+plot_title+".pdf",dpi=300)
     #plt.show()
     plt.close()
 
@@ -494,7 +534,7 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     ax1.legend()
     #ax2.legend() # For drugs, no handles with labels found to put in legend.
     fig.tight_layout()
-    plt.savefig(savename)
+    plt.savefig(savename,dpi=300)
     #plt.show()
     plt.close()
 
@@ -569,7 +609,7 @@ def plot_to_compare_estimated_and_predicted_drug_dynamics(true_parameters, predi
     ax1.legend()
     ax2.legend()
     fig.tight_layout()
-    plt.savefig(savename)
+    plt.savefig(savename,dpi=300)
     #plt.show()
     plt.close()
 
@@ -612,16 +652,16 @@ def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pr
     ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein") #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
 
     # Plot treatments
-    plotheight = 1
-    maxdrugkey = 0
-    ax2 = ax1.twinx() 
-    for treat_index in range(len(treatment_history)):
-        this_treatment = treatment_history[treat_index]
-        if this_treatment.id != 0:
-            treatment_duration = this_treatment.end - this_treatment.start
-            if this_treatment.id > maxdrugkey:
-                maxdrugkey = this_treatment.id
-            if PLOT_TREATMENTS:
+    if PLOT_TREATMENTS:
+        plotheight = 1
+        maxdrugkey = 0
+        ax2 = ax1.twinx() 
+        for treat_index in range(len(treatment_history)):
+            this_treatment = treatment_history[treat_index]
+            if this_treatment.id != 0:
+                treatment_duration = this_treatment.end - this_treatment.start
+                if this_treatment.id > maxdrugkey:
+                    maxdrugkey = this_treatment.id
                 ax2.add_patch(Rectangle((this_treatment.start, this_treatment.id - plotheight/2), treatment_duration, plotheight, zorder=2, color="lightskyblue")) #color=treat_colordict[treat_line_id]))
 
     ax1.set_title(plot_title)
@@ -629,20 +669,21 @@ def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pr
     ax1.set_ylabel("Serum Mprotein (g/dL)")
     ax1.set_ylim(bottom=0, top=(1.1*max(Mprotein_values)))
     #ax1.set_xlim(left=time_zero)
-    ax2.set_ylabel("Treatment id for blue region")
-    ax2.set_yticks([maxdrugkey])
-    ax2.set_yticklabels([maxdrugkey])
-    ax2.set_ylim(bottom=maxdrugkey-plotheight, top=maxdrugkey+plotheight)
-    #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
+    if PLOT_TREATMENTS:
+        ax2.set_ylabel("Treatment id for blue region")
+        ax2.set_yticks([maxdrugkey])
+        ax2.set_yticklabels([maxdrugkey])
+        ax2.set_ylim(bottom=maxdrugkey-plotheight, top=maxdrugkey+plotheight)
+        #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
     ax1.set_zorder(ax1.get_zorder()+3)
     ax1.legend()
     #ax2.legend() # For drugs, no handles with labels found to put in legend.
     fig.tight_layout()
-    plt.savefig(savename)
+    plt.savefig(savename,dpi=300)
     plt.show()
     plt.close()
 
-def plot_posterior_local_confidence_intervals(training_instance_id, patient, sorted_local_pred_y_values, parameter_estimates=[], PLOT_POINT_ESTIMATES=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000, n_chains=4, n_samples=1000, sorted_resistant_mprotein=[]):
+def plot_posterior_local_confidence_intervals(training_instance_id, patient, sorted_local_pred_y_values, parameters=[], PLOT_PARAMETERS=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000, n_chains=4, n_samples=1000, sorted_resistant_mprotein=[]):
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
     Mprotein_values = patient.get_Mprotein_values()
@@ -652,17 +693,6 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
     
     fig, ax1 = plt.subplots()
     ax1.patch.set_facecolor('none')
-
-    if PLOT_POINT_ESTIMATES:
-        # Plot true M protein values according to parameter estimates
-        plotting_mprotein_values = measure_Mprotein_noiseless(parameter_estimates, plotting_times, treatment_history)
-        # Count resistant part
-        resistant_parameters = Parameters((parameter_estimates.Y_0*parameter_estimates.pi_r), 1, parameter_estimates.g_r, parameter_estimates.g_s, parameter_estimates.k_1, parameter_estimates.sigma)
-        plotting_resistant_mprotein_values = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
-        # Plot resistant M protein
-        ax1.plot(plotting_times, plotting_resistant_mprotein_values, linestyle='-', marker='', zorder=3, color='r', label="Estimated M protein (resistant)")
-        # Plot total M protein
-        ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='k', label="Estimated M protein (total)")
 
     # Plot posterior confidence intervals for Resistant M protein
     # 95 % empirical confidence interval
@@ -674,7 +704,7 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
             # index at intervals to get 95 % limit value
             lower_limits = sorted_resistant_mprotein[lower_index,:]
             upper_limits = sorted_resistant_mprotein[upper_index,:]
-            ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.copper(1-critical_value), label='%3.0f %% confidence band on resistant M protein' % (100*(1-2*critical_value)))
+            ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.copper(1-critical_value), label='%3.0f %% conf. for resistant M prot.' % (100*(1-2*critical_value)), zorder=0+index*0.1)
 
     # Plot posterior confidence intervals for total M protein
     # 95 % empirical confidence interval
@@ -687,40 +717,51 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
         lower_limits = sorted_local_pred_y_values[lower_index,:]
         upper_limits = sorted_local_pred_y_values[upper_index,:]
         shade_array = [0.7, 0.5, 0.35]
-        ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.bone(shade_array[index]), label='%3.0f %% confidence band on M protein value' % (100*(1-2*critical_value)))
+        ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.bone(shade_array[index]), label='%3.0f %% conf. for M prot. value' % (100*(1-2*critical_value)), zorder=1+index*0.1)
+
+    if PLOT_PARAMETERS:
+        # Plot true M protein curves according to parameters
+        plotting_mprotein_values = measure_Mprotein_noiseless(parameters, plotting_times, treatment_history)
+        # Count resistant part
+        resistant_parameters = Parameters((parameters.Y_0*parameters.pi_r), 1, parameters.g_r, parameters.g_s, parameters.k_1, parameters.sigma)
+        plotting_resistant_mprotein_values = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
+        # Plot resistant M protein
+        ax1.plot(plotting_times, plotting_resistant_mprotein_values, linestyle='--', marker='', zorder=2.9, color=plt.cm.hot(0.2), label="True M protein (resistant)")
+        # Plot total M protein
+        ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='cyan', label="True M protein (total)")
 
     # Plot M protein observations
-    ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein") #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
+    ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=4, color='k', label="Observed M protein") #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
 
     # Plot treatments
-    plotheight = 1
-    maxdrugkey = 0
-    ax2 = ax1.twinx()
-    for treat_index in range(len(treatment_history)):
-        this_treatment = treatment_history[treat_index]
-        if this_treatment.id != 0:
-            treatment_duration = this_treatment.end - this_treatment.start
-            if this_treatment.id > maxdrugkey:
-                maxdrugkey = this_treatment.id
-            if PLOT_TREATMENTS:
-                ax2.add_patch(Rectangle((this_treatment.start, this_treatment.id - plotheight/2), treatment_duration, plotheight, zorder=2, color="lightskyblue")) #color=treat_colordict[treat_line_id]))
+    if PLOT_TREATMENTS:
+        plotheight = 1
+        maxdrugkey = 0
+        ax2 = ax1.twinx()
+        for treat_index in range(len(treatment_history)):
+            this_treatment = treatment_history[treat_index]
+            if this_treatment.id != 0:
+                treatment_duration = this_treatment.end - this_treatment.start
+                if this_treatment.id > maxdrugkey:
+                    maxdrugkey = this_treatment.id
+                ax2.add_patch(Rectangle((this_treatment.start, this_treatment.id - plotheight/2), treatment_duration, plotheight, zorder=0, color="lightskyblue")) #color=treat_colordict[treat_line_id]))
 
     ax1.set_title(plot_title)
     ax1.set_xlabel("Days")
     ax1.set_ylabel("Serum Mprotein (g/dL)")
     ax1.set_ylim(bottom=0, top=(1.1*max(Mprotein_values)))
     #ax1.set_xlim(left=time_zero)
-    ax2.set_ylabel("Treatment id for blue region")
-    ax2.set_yticks([maxdrugkey])
-    ax2.set_yticklabels([maxdrugkey])
-    ax2.set_ylim(bottom=maxdrugkey-plotheight, top=maxdrugkey+plotheight)
-    #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
+    if PLOT_TREATMENTS:
+        ax2.set_ylabel("Treatment id for blue region")
+        ax2.set_yticks([maxdrugkey])
+        ax2.set_yticklabels([maxdrugkey])
+        ax2.set_ylim(bottom=maxdrugkey-plotheight, top=maxdrugkey+plotheight)
+        #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
     ax1.set_zorder(ax1.get_zorder()+3)
     ax1.legend()
     #ax2.legend() # For drugs, no handles with labels found to put in legend.
     fig.tight_layout()
-    plt.savefig(savename)
-    plt.show()
+    plt.savefig(savename,dpi=300)
     plt.close()
 
 #####################################
