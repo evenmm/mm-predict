@@ -20,10 +20,10 @@ SAVEDIR = "/data/evenmm/plots/"
 script_index = int(sys.argv[1]) 
 
 # Settings
-true_sigma_obs = 0.5*script_index
-N_patients = 1000
+true_sigma_obs = script_index % 3    # 0 1 2 0 1 2
+N_patients = 150
 psi_prior="lognormal"
-WEIGHT_PRIOR = "iso_normal"
+WEIGHT_PRIOR = "symmetry_fix" #"iso_normal"
 N_samples = 1000
 N_tuning = 1000
 target_accept = 0.99
@@ -33,9 +33,12 @@ MODEL_RANDOM_EFFECTS = True
 P = 3 # Number of covariates
 P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
 true_omega = np.array([0.05, 0.10, 0.15])
-RANDOM_EFFECTS = True
+if script_index > 3:
+    RANDOM_EFFECTS = True
+else: 
+    RANDOM_EFFECTS = False
 M_number_of_measurements = 5
-y_resolution = 20 # 1000 crashed the program
+y_resolution = 80 # Number of timepoints to evaluate the posterior of y in
 true_omega_for_psi = 0.1
 
 days_between_measurements = int(1500/M_number_of_measurements)
@@ -204,6 +207,7 @@ var_dimensions = sample_shape[2] # one per patient
 
 
 # Posterior CI for train data
+N_rand_obs_pred_train = 10000 # Number of observation noise samples to draw for each parameter sample
 def plot_posterior_CI(args):
     sample_shape, y_resolution, ii = args
     n_chains = sample_shape[0]
@@ -217,7 +221,7 @@ def plot_posterior_CI(args):
     first_time = min(measurement_times[0], treatment_history[0].start)
     plotting_times = np.linspace(first_time, int(measurement_times[-1]), y_resolution) #int((measurement_times[-1]+1)*10))
     posterior_parameters = np.empty(shape=(n_chains, n_samples), dtype=object)
-    predicted_y_values = np.empty(shape=(n_chains, n_samples, y_resolution))
+    predicted_y_values = np.empty(shape=(n_chains, n_samples*N_rand_obs_pred_train, y_resolution))
     predicted_y_resistant_values = np.empty_like(predicted_y_values)
     for ch in range(n_chains):
         for sa in range(n_samples):
@@ -229,13 +233,17 @@ def plot_posterior_CI(args):
             posterior_parameters[ch,sa] = Parameters(Y_0=this_psi, pi_r=this_pi_r, g_r=this_rho_r, g_s=this_rho_s, k_1=0, sigma=this_sigma_obs)
             these_parameters = posterior_parameters[ch,sa]
             resistant_parameters = Parameters((these_parameters.Y_0*these_parameters.pi_r), 1, these_parameters.g_r, these_parameters.g_s, these_parameters.k_1, these_parameters.sigma)
-            # Predicted total M protein
-            predicted_y_values[ch,sa] = measure_Mprotein_with_noise(these_parameters, plotting_times, treatment_history)
-            # Predicted resistant part
-            predicted_y_resistant_values[ch,sa] = measure_Mprotein_with_noise(resistant_parameters, plotting_times, treatment_history)
-    flat_pred_y_values = np.reshape(predicted_y_values, (n_chains*n_samples,y_resolution))
+            # Predicted total and resistant M protein
+            predicted_y_values_noiseless = measure_Mprotein_noiseless(these_parameters, plotting_times, treatment_history)
+            predicted_y_resistant_values_noiseless = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
+            # Add noise and make the resistant part the estimated fraction of the observed value
+            for rr in range(N_rand_obs_pred_train):
+                noise_array = np.random.normal(0, this_sigma_obs, y_resolution)
+                predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values_noiseless + noise_array
+                predicted_y_resistant_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] * (predicted_y_resistant_values_noiseless/predicted_y_values_noiseless)
+    flat_pred_y_values = np.reshape(predicted_y_values, (n_chains*n_samples*N_rand_obs_pred_train,y_resolution))
     sorted_local_pred_y_values = np.sort(flat_pred_y_values, axis=0)
-    flat_pred_resistant = np.reshape(predicted_y_resistant_values, (n_chains*n_samples,y_resolution))
+    flat_pred_resistant = np.reshape(predicted_y_resistant_values, (n_chains*n_samples*N_rand_obs_pred_train,y_resolution))
     sorted_pred_resistant = np.sort(flat_pred_resistant, axis=0)
     savename = SAVEDIR+"CI_training_id_"+str(ii)+"_"+name+".pdf"
     plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameter_dictionary[ii], PLOT_PARAMETERS=True, PLOT_TREATMENTS=False, plot_title="Posterior CI for training patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant)
@@ -254,6 +262,8 @@ X_test, patient_dictionary_test, parameter_dictionary_test, expected_theta_1_tes
 print("Done generating test patients")
 
 # Posterior predictive CI for test data
+N_rand_eff_pred = 100 # Number of random intercept samples to draw for each idata sample when we make predictions
+N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
 def plot_predictions(args):
     sample_shape, y_resolution, ii = args
     n_chains = sample_shape[0]
@@ -267,13 +277,12 @@ def plot_predictions(args):
     first_time = min(measurement_times[0], treatment_history[0].start)
     plotting_times = np.linspace(first_time, int(measurement_times[-1]), y_resolution) #int((measurement_times[-1]+1)*10))
     predicted_parameters = np.empty(shape=(n_chains, n_samples), dtype=object)
-    predicted_y_values = np.empty(shape=(n_chains, n_samples, y_resolution))
+    predicted_y_values = np.empty(shape=(n_chains*N_rand_eff_pred, n_samples*N_rand_obs_pred, y_resolution))
     predicted_y_resistant_values = np.empty_like(predicted_y_values)
     for ch in range(n_chains):
         for sa in range(n_samples):
             sigma_obs = np.ravel(idata.posterior['sigma_obs'][ch,sa])
             alpha = np.ravel(idata.posterior['alpha'][ch,sa])
-            sigma_weights = np.ravel(idata.posterior['sigma_weights'][ch,sa])
 
             # weights 
             weights_in_rho_s = idata.posterior['weights_in_rho_s'][ch,sa]
@@ -309,37 +318,39 @@ def plot_predictions(args):
 
             # Random effects 
             omega  = np.ravel(idata.posterior['omega'][ch,sa])
-            if MODEL_RANDOM_EFFECTS: 
-                predicted_theta_1 = np.random.normal(alpha[0] + act_out_rho_s, omega[0])
-                predicted_theta_2 = np.random.normal(alpha[1] + act_out_rho_r, omega[1])
-                predicted_theta_3 = np.random.normal(alpha[2] + act_out_pi_r, omega[2])
-            else: 
-                predicted_theta_1 = alpha[0] + act_out_rho_s
-                predicted_theta_2 = alpha[1] + act_out_rho_r
-                predicted_theta_3 = alpha[2] + act_out_pi_r
+            for ee in range(N_rand_eff_pred):
+                if MODEL_RANDOM_EFFECTS: 
+                    predicted_theta_1 = np.random.normal(alpha[0] + act_out_rho_s, omega[0])
+                    predicted_theta_2 = np.random.normal(alpha[1] + act_out_rho_r, omega[1])
+                    predicted_theta_3 = np.random.normal(alpha[2] + act_out_pi_r, omega[2])
+                else: 
+                    predicted_theta_1 = alpha[0] + act_out_rho_s
+                    predicted_theta_2 = alpha[1] + act_out_rho_r
+                    predicted_theta_3 = alpha[2] + act_out_pi_r
 
-            predicted_rho_s = - np.exp(predicted_theta_1)
-            predicted_rho_r = np.exp(predicted_theta_2)
-            predicted_pi_r  = 1/(1+np.exp(-predicted_theta_3))
+                predicted_rho_s = - np.exp(predicted_theta_1)
+                predicted_rho_r = np.exp(predicted_theta_2)
+                predicted_pi_r  = 1/(1+np.exp(-predicted_theta_3))
 
-            measurement_times = patient.get_measurement_times()
-            treatment_history = patient.get_treatment_history()
-            first_time = min(measurement_times[0], treatment_history[0].start)
-            plotting_times = np.linspace(first_time, int(measurement_times[-1]), y_resolution) #int((measurement_times[-1]+1)*10))
-            this_psi = patient.Mprotein_values[0] + np.random.normal(0,sigma_obs)
-            predicted_parameters[ch,sa] = Parameters(Y_0=this_psi, pi_r=predicted_pi_r, g_r=predicted_rho_r, g_s=predicted_rho_s, k_1=0, sigma=sigma_obs)
-            these_parameters = predicted_parameters[ch,sa]
-            resistant_parameters = Parameters(Y_0=(these_parameters.Y_0*these_parameters.pi_r), pi_r=1, g_r=these_parameters.g_r, g_s=these_parameters.g_s, k_1=these_parameters.k_1, sigma=these_parameters.sigma)
-            # Predicted total and resistant M protein
-            predicted_y_values_noiseless = measure_Mprotein_noiseless(these_parameters, plotting_times, treatment_history)
-            predicted_y_resistant_values_noiseless = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
-            # Add noise and make the resistant part the estimated fraction of the observed value
-            noise_array = np.random.normal(0, sigma_obs, y_resolution)
-            predicted_y_values[ch,sa] = predicted_y_values_noiseless + noise_array
-            predicted_y_resistant_values[ch,sa] = predicted_y_values[ch,sa] * (predicted_y_resistant_values_noiseless/predicted_y_values_noiseless)
-    flat_pred_y_values = np.reshape(predicted_y_values, (n_chains*n_samples,y_resolution))
+                measurement_times = patient.get_measurement_times()
+                treatment_history = patient.get_treatment_history()
+                first_time = min(measurement_times[0], treatment_history[0].start)
+                plotting_times = np.linspace(first_time, int(measurement_times[-1]), y_resolution) #int((measurement_times[-1]+1)*10))
+                this_psi = patient.Mprotein_values[0] + np.random.normal(0,sigma_obs)
+                predicted_parameters[ch,sa] = Parameters(Y_0=this_psi, pi_r=predicted_pi_r, g_r=predicted_rho_r, g_s=predicted_rho_s, k_1=0, sigma=sigma_obs)
+                these_parameters = predicted_parameters[ch,sa]
+                resistant_parameters = Parameters(Y_0=(these_parameters.Y_0*these_parameters.pi_r), pi_r=1, g_r=these_parameters.g_r, g_s=these_parameters.g_s, k_1=these_parameters.k_1, sigma=these_parameters.sigma)
+                # Predicted total and resistant M protein
+                predicted_y_values_noiseless = measure_Mprotein_noiseless(these_parameters, plotting_times, treatment_history)
+                predicted_y_resistant_values_noiseless = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
+                # Add noise and make the resistant part the estimated fraction of the observed value
+                for rr in range(N_rand_obs_pred):
+                    noise_array = np.random.normal(0, sigma_obs, y_resolution)
+                    predicted_y_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] = predicted_y_values_noiseless + noise_array
+                    predicted_y_resistant_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] = predicted_y_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] * (predicted_y_resistant_values_noiseless/predicted_y_values_noiseless)
+    flat_pred_y_values = np.reshape(predicted_y_values, (n_chains*n_samples*N_rand_eff_pred*N_rand_obs_pred,y_resolution))
     sorted_local_pred_y_values = np.sort(flat_pred_y_values, axis=0)
-    flat_pred_resistant = np.reshape(predicted_y_resistant_values, (n_chains*n_samples,y_resolution))
+    flat_pred_resistant = np.reshape(predicted_y_resistant_values, (n_chains*n_samples*N_rand_eff_pred*N_rand_obs_pred,y_resolution))
     sorted_pred_resistant = np.sort(flat_pred_resistant, axis=0)
     savename = SAVEDIR+"CI_new_test_id_"+str(ii)+"_"+name+".pdf"
     plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameter_dictionary_test[ii], PLOT_PARAMETERS=True, PLOT_TREATMENTS=False, plot_title="Posterior predictive CI for test patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant)

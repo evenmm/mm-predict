@@ -11,7 +11,7 @@ from copy import deepcopy
 import time
 import warnings
 from multiprocessing import Pool
-from drug_colors import *
+#from drug_colors import *
 import seaborn as sns
 
 def isNaN(string):
@@ -51,23 +51,23 @@ rs = RandomState(MT19937(SeedSequence(123456789)))
 # 22.03.22 treatment in terms of different drugs
 
 # In drug dictionary, key is drug name and value is drug id
-drug_dictionary_OSLO = np.load("./binaries_and_pickles/drug_dictionary_OSLO.npy", allow_pickle=True).item()
-drug_dictionary_COMMPASS = np.load("./binaries_and_pickles/drug_dictionary_COMMPASS.npy", allow_pickle=True).item()
-for key, value in drug_dictionary_COMMPASS.items():
-    if key not in drug_dictionary_OSLO.keys():
-        drug_dictionary_OSLO[key] = (max(drug_dictionary_OSLO.values())+1)
+#drug_dictionary_OSLO = np.load("./binaries_and_pickles/drug_dictionary_OSLO.npy", allow_pickle=True).item()
+#drug_dictionary_COMMPASS = np.load("./binaries_and_pickles/drug_dictionary_COMMPASS.npy", allow_pickle=True).item()
+#for key, value in drug_dictionary_COMMPASS.items():
+#    if key not in drug_dictionary_OSLO.keys():
+#        drug_dictionary_OSLO[key] = (max(drug_dictionary_OSLO.values())+1)
 # Join the two drug dictionaries to get a complete drug dictionary 
-drug_dictionary = drug_dictionary_OSLO
-np.save("./binaries_and_pickles/drug_dictionary.npy", drug_dictionary)
-drug_id_to_name_dictionary = {v: k for k, v in drug_dictionary.items()}
-treatment_to_id_dictionary = np.load("./binaries_and_pickles/treatment_to_id_dictionary_OSLO.npy", allow_pickle=True).item()
-#treatment_to_id_dictionary = np.load("./binaries_and_pickles/treatment_to_id_dictionary_COMMPASS.npy", allow_pickle=True).item()
-treatment_id_to_drugs_dictionary = {v: k for k, v in treatment_to_id_dictionary.items()}
+#drug_dictionary = drug_dictionary_OSLO
+#np.save("./binaries_and_pickles/drug_dictionary.npy", drug_dictionary)
+#drug_id_to_name_dictionary = {v: k for k, v in drug_dictionary.items()}
+#treatment_to_id_dictionary = np.load("./binaries_and_pickles/treatment_to_id_dictionary_OSLO.npy", allow_pickle=True).item()
+##treatment_to_id_dictionary = np.load("./binaries_and_pickles/treatment_to_id_dictionary_COMMPASS.npy", allow_pickle=True).item()
+#treatment_id_to_drugs_dictionary = {v: k for k, v in treatment_to_id_dictionary.items()}
 
-def get_drug_names_from_treatment_id_COMMPASS(treatment_id, treatment_id_to_drugs_dictionary_COMMPASS):
-    drug_set = treatment_id_to_drugs_dictionary_COMMPASS[treatment_id]
-    drug_names = [drug_id_to_name_dictionary[elem] for elem in drug_set]
-    return drug_names
+#def get_drug_names_from_treatment_id_COMMPASS(treatment_id, treatment_id_to_drugs_dictionary_COMMPASS):
+#    drug_set = treatment_id_to_drugs_dictionary_COMMPASS[treatment_id]
+#    drug_names = [drug_id_to_name_dictionary[elem] for elem in drug_set]
+#    return drug_names
 
 #unique_drugs = ['Revlimid (lenalidomide)', 'Cyclophosphamide', 'Pomalidomide',
 # 'Thalidomide', 'Velcade (bortezomib) - subcut twice weekly',
@@ -641,8 +641,8 @@ def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pr
     color_array = ["#fbd1b4", "#f89856", "#e36209"] #["#fbd1b4", "#fab858", "#f89856", "#f67c27", "#e36209"] #https://icolorpalette.com/color/rust-orange
     for index, critical_value in enumerate([0.05, 0.25, 0.45]): # Corresponding to confidence levels 90, 50, and 10
         # Get index to find right value 
-        lower_index = int(critical_value*n_chains*n_samples)
-        upper_index = int((1-critical_value)*n_chains*n_samples)
+        lower_index = int(critical_value*sorted_pred_y_values.shape[0]) #n_chains*n_samples)
+        upper_index = int((1-critical_value)*sorted_pred_y_values.shape[0]) #n_chains*n_samples)
         # index at intervals to get 95 % limit value
         lower_limits = sorted_pred_y_values[lower_index,training_instance_id,:]
         upper_limits = sorted_pred_y_values[upper_index,training_instance_id,:]       #color=color_array[index]
@@ -699,8 +699,8 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
     if len(sorted_resistant_mprotein) > 0: 
         for index, critical_value in enumerate([0.05, 0.25, 0.45]): # Corresponding to confidence levels 90, 50, and 10
             # Get index to find right value 
-            lower_index = int(critical_value*n_chains*n_samples)
-            upper_index = int((1-critical_value)*n_chains*n_samples)
+            lower_index = int(critical_value*sorted_resistant_mprotein.shape[0]) #n_chains*n_samples)
+            upper_index = int((1-critical_value)*sorted_resistant_mprotein.shape[0]) #n_chains*n_samples)
             # index at intervals to get 95 % limit value
             lower_limits = sorted_resistant_mprotein[lower_index,:]
             upper_limits = sorted_resistant_mprotein[upper_index,:]
@@ -711,8 +711,8 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
     color_array = ["#fbd1b4", "#f89856", "#e36209"] #["#fbd1b4", "#fab858", "#f89856", "#f67c27", "#e36209"] #https://icolorpalette.com/color/rust-orange
     for index, critical_value in enumerate([0.05, 0.25, 0.45]): # Corresponding to confidence levels 90, 50, and 10
         # Get index to find right value 
-        lower_index = int(critical_value*n_chains*n_samples)
-        upper_index = int((1-critical_value)*n_chains*n_samples)
+        lower_index = int(critical_value*sorted_local_pred_y_values.shape[0]) #n_chains*n_samples)
+        upper_index = int((1-critical_value)*sorted_local_pred_y_values.shape[0]) #n_chains*n_samples)
         # index at intervals to get 95 % limit value
         lower_limits = sorted_local_pred_y_values[lower_index,:]
         upper_limits = sorted_local_pred_y_values[upper_index,:]

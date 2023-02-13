@@ -12,7 +12,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 # Function argument shapes: 
 # X is an (N_patients, P) shaped pandas dataframe
 # patient dictionary contains N_patients patients in the same order as X
-def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "iso_normal", SAVING=False):
+def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False):
     N_patients, P = X.shape
     P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
     X_not_transformed = X.copy()
@@ -48,8 +48,11 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
 
     n_hidden = 3
     # Initialize random weights between each layer
-    init_1 = np.random.randn(X.shape[0], n_hidden) #.astype(floatX)
-    init_out = np.random.randn(n_hidden) #.astype(floatX)
+    init_1 = np.random.randn(X.shape[0], n_hidden)
+    if WEIGHT_PRIOR == "iso_normal":
+        init_out = np.random.randn(n_hidden)
+    else:
+        init_out = np.random.exponential(scale=0.1, size=n_hidden)
 
     with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as neural_net_model:
         # Observation noise (std)
@@ -58,44 +61,45 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
         # alpha
         alpha = pm.Normal("alpha",  mu=np.array([np.log(0.002), np.log(0.002), np.log(0.5/(1-0.5))]),  sigma=1, shape=3)
 
-        ## intercepts for the neural networks
-        #intercepts = pm.Normal("intercepts",  mu=0, sigma=1, shape=(n_hidden,2,3)
-
-        # covariate effects through multilayer neural network
-        # Weights from input to hidden layer
-        # Funnel reparametrized weights: 
-        sigma_weights = pm.HalfNormal("sigma_weights", sigma=1)
-        if FUNNEL_WEIGHTS == True:
+        sigma_weights_in = pm.HalfNormal("sigma_weights_in", sigma=0.1)
+        sigma_weights_out = pm.HalfNormal("sigma_weights_out", sigma=0.1)
+        if FUNNEL_WEIGHTS == True: # Funnel reparametrized weights: 
             # Weights input to 1st layer
             weights_in_rho_s_offset = pm.Normal("weights_in_rho_s_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
             weights_in_rho_r_offset = pm.Normal("weights_in_rho_r_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
             weights_in_pi_r_offset = pm.Normal("weights_in_pi_r_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
-            weights_in_rho_s = pm.Deterministic(("weights_in_rho_s", weights_in_rho_s_offset * sigma_weights)) # sigma_weights_in_rho_s))
-            weights_in_rho_r = pm.Deterministic(("weights_in_rho_r", weights_in_rho_r_offset * sigma_weights)) # sigma_weights_in_rho_r))
-            weights_in_pi_r = pm.Deterministic(("weights_in_pi_r", weights_in_pi_r_offset * sigma_weights)) # sigma_weights_in_pi_r))
+            weights_in_rho_s = pm.Deterministic(("weights_in_rho_s", weights_in_rho_s_offset * sigma_weights_in)) # sigma_weights_in_rho_s))
+            weights_in_rho_r = pm.Deterministic(("weights_in_rho_r", weights_in_rho_r_offset * sigma_weights_in)) # sigma_weights_in_rho_r))
+            weights_in_pi_r = pm.Deterministic(("weights_in_pi_r", weights_in_pi_r_offset * sigma_weights_in)) # sigma_weights_in_pi_r))
             # Weights from 1st to 2nd layer
-            weights_out_rho_s_offset = pm.Normal("weights_out_rho_s_offset ", mu=0, sigma=1, shape=(n_hidden, ))
-            weights_out_rho_r_offset = pm.Normal("weights_out_rho_r_offset ", mu=0, sigma=1, shape=(n_hidden, ))
-            weights_out_pi_r_offset = pm.Normal("weights_out_pi_r_offset ", mu=0, sigma=1, shape=(n_hidden, ))
-            weights_out_rho_s = pm.Deterministic(("weights_out_rho_s", weights_out_rho_s_offset * sigma_weights)) #sigma_weights_out_rho_s
-            weights_out_rho_r = pm.Deterministic(("weights_out_rho_r", weights_out_rho_r_offset * sigma_weights)) #sigma_weights_out_rho_r
-            weights_out_pi_r = pm.Deterministic(("weights_out_pi_r", weights_out_pi_r_offset * sigma_weights)) #sigma_weights_out_pi_r
+            if WEIGHT_PRIOR == "iso_normal":
+                weights_out_rho_s_offset = pm.Normal("weights_out_rho_s_offset ", mu=0, sigma=1, shape=(n_hidden, ))
+                weights_out_rho_r_offset = pm.Normal("weights_out_rho_r_offset ", mu=0, sigma=1, shape=(n_hidden, ))
+                weights_out_pi_r_offset = pm.Normal("weights_out_pi_r_offset ", mu=0, sigma=1, shape=(n_hidden, ))
+            else: # Handling symmetry
+                weights_out_rho_s_offset = pm.HalfNormal("weights_out_rho_s_offset ", sigma=1, shape=(n_hidden, ))
+                weights_out_rho_r_offset = pm.HalfNormal("weights_out_rho_r_offset ", sigma=1, shape=(n_hidden, ))
+                weights_out_pi_r_offset = pm.HalfNormal("weights_out_pi_r_offset ", sigma=1, shape=(n_hidden, ))
+            weights_out_rho_s = pm.Deterministic(("weights_out_rho_s", weights_out_rho_s_offset * sigma_weights_out)) #sigma_weights_out_rho_s
+            weights_out_rho_r = pm.Deterministic(("weights_out_rho_r", weights_out_rho_r_offset * sigma_weights_out)) #sigma_weights_out_rho_r
+            weights_out_pi_r = pm.Deterministic(("weights_out_pi_r", weights_out_pi_r_offset * sigma_weights_out)) #sigma_weights_out_pi_r
         else:
             # Weights input to 1st layer
-            weights_in_rho_s = pm.Normal('weights_in_rho_s', 0, sigma=sigma_weights, shape=(X.shape[0], n_hidden), initval=init_1) # sigma=sigma_weights_in_rho_s
-            weights_in_rho_r = pm.Normal('weights_in_rho_r', 0, sigma=sigma_weights, shape=(X.shape[0], n_hidden), initval=init_1) # sigma=sigma_weights_in_rho_r
-            weights_in_pi_r = pm.Normal('weights_in_pi_r', 0, sigma=sigma_weights, shape=(X.shape[0], n_hidden), initval=init_1) # sigma=sigma_weights_in_pi_r
+            weights_in_rho_s = pm.Normal('weights_in_rho_s', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1) # sigma=sigma_weights_in_rho_s
+            weights_in_rho_r = pm.Normal('weights_in_rho_r', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1) # sigma=sigma_weights_in_rho_r
+            weights_in_pi_r = pm.Normal('weights_in_pi_r', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1) # sigma=sigma_weights_in_pi_r
             # Weights from 1st to 2nd layer
-            weights_out_rho_s = pm.Normal('weights_out_rho_s', 0, sigma=sigma_weights, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_rho_s
-            weights_out_rho_r = pm.Normal('weights_out_rho_r', 0, sigma=sigma_weights, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_rho_r
-            weights_out_pi_r = pm.Normal('weights_out_pi_r', 0, sigma=sigma_weights, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_pi_r
-        # Original was with all sigma_weights = 1 
-        
+            if WEIGHT_PRIOR == "iso_normal":
+                weights_out_rho_s = pm.Normal('weights_out_rho_s', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_rho_s
+                weights_out_rho_r = pm.Normal('weights_out_rho_r', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_rho_r
+                weights_out_pi_r = pm.Normal('weights_out_pi_r', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_pi_r
+            else: # Handling symmetry
+                weights_out_rho_s = pm.HalfNormal('weights_out_rho_s', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_rho_s
+                weights_out_rho_r = pm.HalfNormal('weights_out_rho_r', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_rho_r
+                weights_out_pi_r = pm.HalfNormal('weights_out_pi_r', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_pi_r
+
         # offsets for each node between each layer 
         sigma_bias_in = pm.HalfNormal("sigma_bias_in", sigma=1, shape=(1,n_hidden))
-        #sigma_bias_in_rho_s = pm.HalfNormal("sigma_bias_in_rho_s", sigma=1, shape=(1,n_hidden))
-        #sigma_bias_in_rho_r = pm.HalfNormal("sigma_bias_in_rho_r", sigma=1, shape=(1,n_hidden))
-        #sigma_bias_in_pi_r = pm.HalfNormal("sigma_bias_in_pi_r", sigma=1, shape=(1,n_hidden))
         bias_in_rho_s = pm.Normal("bias_in_rho_s", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_s
         bias_in_rho_r = pm.Normal("bias_in_rho_r", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_r
         bias_in_pi_r = pm.Normal("bias_in_pi_r", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_pi_r
@@ -121,19 +125,24 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
 
         # Latent variables theta
         omega = pm.HalfNormal("omega",  sigma=1, shape=3) # Patient variability in theta (std)
-        if FUNNEL_REPARAMETRIZATION == True: 
-            # Reparametrized to escape/explore the funnel of Hell (https://twiecki.io/blog/2017/02/08/bayesian-hierchical-non-centered/):
-            theta_rho_s_offset = pm.Normal('theta_rho_s_offset', mu=0, sigma=1, shape=N_patients)
-            theta_rho_r_offset = pm.Normal('theta_rho_r_offset', mu=0, sigma=1, shape=N_patients)
-            theta_pi_r_offset  = pm.Normal('theta_pi_r_offset',  mu=0, sigma=1, shape=N_patients)
-            theta_rho_s = pm.Deterministic("theta_rho_s", (alpha[0] + act_out_rho_s + theta_rho_s_offset * omega[0]))
-            theta_rho_r = pm.Deterministic("theta_rho_r", (alpha[1] + act_out_rho_r + theta_rho_r_offset * omega[1]))
-            theta_pi_r  = pm.Deterministic("theta_pi_r",  (alpha[2] + act_out_pi_r + theta_pi_r_offset  * omega[2]))
+        if MODEL_RANDOM_EFFECTS:
+            if FUNNEL_REPARAMETRIZATION == True: 
+                # Reparametrized to escape/explore the funnel of Hell (https://twiecki.io/blog/2017/02/08/bayesian-hierchical-non-centered/):
+                theta_rho_s_offset = pm.Normal('theta_rho_s_offset', mu=0, sigma=1, shape=N_patients)
+                theta_rho_r_offset = pm.Normal('theta_rho_r_offset', mu=0, sigma=1, shape=N_patients)
+                theta_pi_r_offset  = pm.Normal('theta_pi_r_offset',  mu=0, sigma=1, shape=N_patients)
+                theta_rho_s = pm.Deterministic("theta_rho_s", (alpha[0] + act_out_rho_s + theta_rho_s_offset * omega[0]))
+                theta_rho_r = pm.Deterministic("theta_rho_r", (alpha[1] + act_out_rho_r + theta_rho_r_offset * omega[1]))
+                theta_pi_r  = pm.Deterministic("theta_pi_r",  (alpha[2] + act_out_pi_r + theta_pi_r_offset  * omega[2]))
+            else: 
+                # Original
+                theta_rho_s = pm.Normal("theta_rho_s", mu= alpha[0] + act_out_rho_s, sigma=omega[0]) # Individual random intercepts in theta to confound effects of X
+                theta_rho_r = pm.Normal("theta_rho_r", mu= alpha[1] + act_out_rho_r, sigma=omega[1]) # Individual random intercepts in theta to confound effects of X
+                theta_pi_r  = pm.Normal("theta_pi_r",  mu= alpha[2] + act_out_pi_r,  sigma=omega[2]) # Individual random intercepts in theta to confound effects of X
         else: 
-            # Original
-            theta_rho_s = pm.Normal("theta_rho_s", mu= alpha[0] + act_out_rho_s, sigma=omega[0]) # Individual random intercepts in theta to confound effects of X
-            theta_rho_r = pm.Normal("theta_rho_r", mu= alpha[1] + act_out_rho_r, sigma=omega[1]) # Individual random intercepts in theta to confound effects of X
-            theta_pi_r  = pm.Normal("theta_pi_r",  mu= alpha[2] + act_out_pi_r,  sigma=omega[2]) # Individual random intercepts in theta to confound effects of X
+            theta_rho_s = pm.Deterministic("theta_rho_s", alpha[0] + act_out_rho_s)
+            theta_rho_r = pm.Deterministic("theta_rho_r", alpha[1] + act_out_rho_r)
+            theta_pi_r  = pm.Deterministic("theta_pi_r",  alpha[2] + act_out_pi_r)
 
         # psi: True M protein at time 0
         # 1) Normal. Fast convergence, but possibly negative tail 
@@ -144,9 +153,6 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", FUNNEL_REPARAM
             xi = pm.HalfNormal("xi", sigma=1)
             log_psi = pm.Normal("log_psi", mu=np.log(yi0+1e-8), sigma=xi, shape=N_patients)
             psi = pm.Deterministic("psi", np.exp(log_psi))
-        # 3) Exact but does not work: 
-        #log_psi = pm.Normal("log_psi", mu=np.log(yi0) - np.log( (sigma_obs**2)/(yi0**2) - 1), sigma=np.log( (sigma_obs**2)/(yi0**2) - 1), shape=N_patients) # Informative. Centered around the patient specific yi0 with std=observation noise sigma_obs 
-        #psi = pm.Deterministic("psi", np.exp(log_psi))
 
         # Transformed latent variables 
         rho_s = pm.Deterministic("rho_s", -np.exp(theta_rho_s))
