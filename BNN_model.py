@@ -12,7 +12,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 # Function argument shapes: 
 # X is an (N_patients, P) shaped pandas dataframe
 # patient dictionary contains N_patients patients in the same order as X
-def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False):
+def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False, n_hidden = 3):
     N_patients, P = X.shape
     P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
     X_not_transformed = X.copy()
@@ -46,7 +46,6 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
         print("Unknown prior option specified for psi; Using 'lognormal' prior")
         psi_prior = "lognormal"
 
-    n_hidden = 3
     # Initialize random weights between each layer
     init_1 = np.random.randn(X.shape[0], n_hidden)
     if WEIGHT_PRIOR == "iso_normal":
@@ -62,7 +61,6 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
         alpha = pm.Normal("alpha",  mu=np.array([np.log(0.002), np.log(0.002), np.log(0.5/(1-0.5))]),  sigma=1, shape=3)
 
         sigma_weights_in = pm.HalfNormal("sigma_weights_in", sigma=0.1)
-        sigma_weights_out = pm.HalfNormal("sigma_weights_out", sigma=0.1)
         if FUNNEL_WEIGHTS == True: # Funnel reparametrized weights: 
             # Weights input to 1st layer
             weights_in_rho_s_offset = pm.Normal("weights_in_rho_s_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
@@ -76,27 +74,35 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
                 weights_out_rho_s_offset = pm.Normal("weights_out_rho_s_offset ", mu=0, sigma=1, shape=(n_hidden, ))
                 weights_out_rho_r_offset = pm.Normal("weights_out_rho_r_offset ", mu=0, sigma=1, shape=(n_hidden, ))
                 weights_out_pi_r_offset = pm.Normal("weights_out_pi_r_offset ", mu=0, sigma=1, shape=(n_hidden, ))
+            # WEIGHT_PRIOR == "Student_out" does not make sense with funnel
             else: # Handling symmetry
                 weights_out_rho_s_offset = pm.HalfNormal("weights_out_rho_s_offset ", sigma=1, shape=(n_hidden, ))
                 weights_out_rho_r_offset = pm.HalfNormal("weights_out_rho_r_offset ", sigma=1, shape=(n_hidden, ))
                 weights_out_pi_r_offset = pm.HalfNormal("weights_out_pi_r_offset ", sigma=1, shape=(n_hidden, ))
-            weights_out_rho_s = pm.Deterministic(("weights_out_rho_s", weights_out_rho_s_offset * sigma_weights_out)) #sigma_weights_out_rho_s
-            weights_out_rho_r = pm.Deterministic(("weights_out_rho_r", weights_out_rho_r_offset * sigma_weights_out)) #sigma_weights_out_rho_r
-            weights_out_pi_r = pm.Deterministic(("weights_out_pi_r", weights_out_pi_r_offset * sigma_weights_out)) #sigma_weights_out_pi_r
+            sigma_weights_out = pm.HalfNormal("sigma_weights_out", sigma=0.1)
+            weights_out_rho_s = pm.Deterministic(("weights_out_rho_s", weights_out_rho_s_offset * sigma_weights_out))
+            weights_out_rho_r = pm.Deterministic(("weights_out_rho_r", weights_out_rho_r_offset * sigma_weights_out))
+            weights_out_pi_r = pm.Deterministic(("weights_out_pi_r", weights_out_pi_r_offset * sigma_weights_out))
         else:
             # Weights input to 1st layer
-            weights_in_rho_s = pm.Normal('weights_in_rho_s', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1) # sigma=sigma_weights_in_rho_s
-            weights_in_rho_r = pm.Normal('weights_in_rho_r', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1) # sigma=sigma_weights_in_rho_r
-            weights_in_pi_r = pm.Normal('weights_in_pi_r', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1) # sigma=sigma_weights_in_pi_r
+            weights_in_rho_s = pm.Normal('weights_in_rho_s', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1)
+            weights_in_rho_r = pm.Normal('weights_in_rho_r', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1)
+            weights_in_pi_r = pm.Normal('weights_in_pi_r', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1)
             # Weights from 1st to 2nd layer
             if WEIGHT_PRIOR == "iso_normal":
-                weights_out_rho_s = pm.Normal('weights_out_rho_s', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_rho_s
-                weights_out_rho_r = pm.Normal('weights_out_rho_r', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_rho_r
-                weights_out_pi_r = pm.Normal('weights_out_pi_r', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_pi_r
+                sigma_weights_out = pm.HalfNormal("sigma_weights_out", sigma=0.1)
+                weights_out_rho_s = pm.Normal('weights_out_rho_s', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
+                weights_out_rho_r = pm.Normal('weights_out_rho_r', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
+                weights_out_pi_r = pm.Normal('weights_out_pi_r', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
+            elif WEIGHT_PRIOR == "Student_out": # Handling symmetry
+                weights_out_rho_s = pm.HalfStudentT('weights_out_rho_s', nu=4, sigma=1, shape=(n_hidden, ), initval=init_out)
+                weights_out_rho_r = pm.HalfStudentT('weights_out_rho_r', nu=4, sigma=1, shape=(n_hidden, ), initval=init_out)
+                weights_out_pi_r = pm.HalfStudentT('weights_out_pi_r', nu=4, sigma=1, shape=(n_hidden, ), initval=init_out)
             else: # Handling symmetry
-                weights_out_rho_s = pm.HalfNormal('weights_out_rho_s', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_rho_s
-                weights_out_rho_r = pm.HalfNormal('weights_out_rho_r', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_rho_r
-                weights_out_pi_r = pm.HalfNormal('weights_out_pi_r', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_pi_r
+                sigma_weights_out = pm.HalfNormal("sigma_weights_out", sigma=0.1)
+                weights_out_rho_s = pm.HalfNormal('weights_out_rho_s', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
+                weights_out_rho_r = pm.HalfNormal('weights_out_rho_r', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
+                weights_out_pi_r = pm.HalfNormal('weights_out_pi_r', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
 
         # offsets for each node between each layer 
         sigma_bias_in = pm.HalfNormal("sigma_bias_in", sigma=1, shape=(1,n_hidden))

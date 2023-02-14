@@ -680,7 +680,7 @@ def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pr
     #ax2.legend() # For drugs, no handles with labels found to put in legend.
     fig.tight_layout()
     plt.savefig(savename,dpi=300)
-    plt.show()
+    #plt.show()
     plt.close()
 
 def plot_posterior_local_confidence_intervals(training_instance_id, patient, sorted_local_pred_y_values, parameters=[], PLOT_PARAMETERS=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000, n_chains=4, n_samples=1000, sorted_resistant_mprotein=[]):
@@ -758,10 +758,12 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
         ax2.set_ylim(bottom=maxdrugkey-plotheight, top=maxdrugkey+plotheight)
         #ax2.set_ylim([-0.5,len(unique_drugs)+0.5]) # If you want to cover all unique drugs
     ax1.set_zorder(ax1.get_zorder()+3)
-    ax1.legend()
+    #handles, labels = ax1.get_legend_handles_labels()
+    #lgd = ax1.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5,-0.1))
+    #ax1.legend()
     #ax2.legend() # For drugs, no handles with labels found to put in legend.
     fig.tight_layout()
-    plt.savefig(savename,dpi=300)
+    plt.savefig(savename, dpi=300) #, bbox_extra_artists=(lgd), bbox_inches='tight')
     plt.close()
 
 #####################################

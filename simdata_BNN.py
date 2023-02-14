@@ -20,23 +20,34 @@ SAVEDIR = "/data/evenmm/plots/"
 script_index = int(sys.argv[1]) 
 
 # Settings
-true_sigma_obs = script_index % 3    # 0 1 2 0 1 2
+if int(script_index % 3) == 0:
+    true_sigma_obs = 0
+elif int(script_index % 3) == 1:
+    true_sigma_obs = 2.5
+elif int(script_index % 3) == 2:
+    true_sigma_obs = 5
+
+if script_index > 3:
+    RANDOM_EFFECTS = True
+else: 
+    RANDOM_EFFECTS = False
+
+RANDOM_EFFECTS_TEST = False
+
 N_patients = 150
 psi_prior="lognormal"
-WEIGHT_PRIOR = "symmetry_fix" #"iso_normal"
+WEIGHT_PRIOR = "symmetry_fix" #"iso_normal" "Student_out"
 N_samples = 1000
 N_tuning = 1000
 target_accept = 0.99
 max_treedepth = 10
 FUNNEL_REPARAMETRIZATION = False
 MODEL_RANDOM_EFFECTS = True
+N_HIDDEN = 3
 P = 3 # Number of covariates
 P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
-true_omega = np.array([0.05, 0.10, 0.15])
-if script_index > 3:
-    RANDOM_EFFECTS = True
-else: 
-    RANDOM_EFFECTS = False
+true_omega = np.array([0.10, 0.05, 0.20])
+
 M_number_of_measurements = 5
 y_resolution = 80 # Number of timepoints to evaluate the posterior of y in
 true_omega_for_psi = 0.1
@@ -44,6 +55,8 @@ true_omega_for_psi = 0.1
 days_between_measurements = int(1500/M_number_of_measurements)
 measurement_times = days_between_measurements * np.linspace(0, M_number_of_measurements-1, M_number_of_measurements)
 treatment_history = np.array([Treatment(start=0, end=measurement_times[-1], id=1)])
+name = "simdata_BNN_"+str(script_index)+"_M_"+str(M_number_of_measurements)+"_P_"+str(P)+"_N_patients_"+str(N_patients)+"_psi_prior_"+psi_prior+"_N_samples_"+str(N_samples)+"_N_tuning_"+str(N_tuning)+"_target_accept_"+str(target_accept)+"_max_treedepth_"+str(max_treedepth)+"_FUNNEL_REPARAMETRIZATION_"+str(FUNNEL_REPARAMETRIZATION)+"_RANDOM_EFFECTS_"+str(RANDOM_EFFECTS)+"_WEIGHT_PRIOR_"+str(WEIGHT_PRIOR+"_N_HIDDEN_"+str(N_HIDDEN))
+print("Running "+name)
 
 # Function to get expected theta from X
 def get_expected_theta_from_X_one_interaction(X): # One interaction: In rho_s only
@@ -51,7 +64,7 @@ def get_expected_theta_from_X_one_interaction(X): # One interaction: In rho_s on
     N_patients_local, _ = X.shape
     rho_s_population = -0.005
     rho_r_population = 0.001
-    pi_r_population = 0.4
+    pi_r_population = 0.3
     theta_rho_s_population_for_x_equal_to_zero = np.log(-rho_s_population)
     theta_rho_r_population_for_x_equal_to_zero = np.log(rho_r_population)
     theta_pi_r_population_for_x_equal_to_zero  = np.log(pi_r_population/(1-pi_r_population))
@@ -78,7 +91,7 @@ def get_expected_theta_from_X_2(X): # One interaction: In rho_s only
     # These are the true parameters for a patient with all covariates equal to 0:
     rho_s_population = -0.005
     rho_r_population = 0.001
-    pi_r_population = 0.4
+    pi_r_population = 0.3
     theta_rho_s_population_for_x_equal_to_zero = np.log(-rho_s_population)
     theta_rho_r_population_for_x_equal_to_zero = np.log(rho_r_population)
     theta_pi_r_population_for_x_equal_to_zero  = np.log(pi_r_population/(1-pi_r_population))
@@ -103,11 +116,43 @@ def get_expected_theta_from_X_2(X): # One interaction: In rho_s only
 
 X, patient_dictionary, parameter_dictionary, expected_theta_1, true_theta_rho_s, true_rho_s = generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients, P, get_expected_theta_from_X_2, true_omega, true_omega_for_psi, seed=42, RANDOM_EFFECTS=RANDOM_EFFECTS)
 
+# Visualize parameter dependancy on covariates 
+VISZ = True
+if VISZ:
+    color_array = X["Covariate 2"].to_numpy()
+
+    fig, ax = plt.subplots()
+    ax.set_title("expected_theta_1 depends on covariates 1 and 2")
+    points = ax.scatter(X["Covariate 1"], expected_theta_1, c=color_array, cmap="plasma")
+    ax.set_xlabel("covariate 1")
+    ax.set_ylabel("expected_theta_1")
+    cbar = fig.colorbar(points)
+    cbar.set_label('covariate 2', rotation=90)
+    plt.savefig(SAVEDIR+"_effects_1_"+name+".pdf", dpi=300)
+    plt.close()
+
+    fig, ax = plt.subplots()
+    ax.set_title("true_theta_rho_s depends on covariates 1 and 2")
+    points = ax.scatter(X["Covariate 1"], true_theta_rho_s, c=color_array, cmap="plasma")
+    ax.set_xlabel("covariate 1")
+    ax.set_ylabel("true_theta_rho_s")
+    cbar = fig.colorbar(points)
+    cbar.set_label('covariate 2', rotation=90)
+    plt.savefig(SAVEDIR+"_effects_2_"+name+".pdf", dpi=300)
+    plt.close()
+
+    fig, ax = plt.subplots()
+    ax.set_title("true_rho_s depends on covariates 1 and 2")
+    points = ax.scatter(X["Covariate 1"], true_rho_s, c=color_array, cmap="plasma")
+    ax.set_xlabel("covariate 1")
+    ax.set_ylabel("true_rho_s")
+    cbar = fig.colorbar(points)
+    cbar.set_label('covariate 2', rotation=90)
+    plt.savefig(SAVEDIR+"_effects_3_"+name+".pdf", dpi=300)
+    plt.close()
 
 # Sample from full model
-name = "simdata_BNN_"+str(script_index)+"_M_"+str(M_number_of_measurements)+"_P_"+str(P)+"_N_patients_"+str(N_patients)+"_psi_prior_"+psi_prior+"_N_samples_"+str(N_samples)+"_N_tuning_"+str(N_tuning)+"_target_accept_"+str(target_accept)+"_max_treedepth_"+str(max_treedepth)+"_FUNNEL_REPARAMETRIZATION_"+str(FUNNEL_REPARAMETRIZATION)
-print("Running "+name)
-neural_net_model = BNN_model(X, patient_dictionary, name, psi_prior=psi_prior, MODEL_RANDOM_EFFECTS=MODEL_RANDOM_EFFECTS, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION, WEIGHT_PRIOR=WEIGHT_PRIOR)
+neural_net_model = BNN_model(X, patient_dictionary, name, psi_prior=psi_prior, MODEL_RANDOM_EFFECTS=MODEL_RANDOM_EFFECTS, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION, WEIGHT_PRIOR=WEIGHT_PRIOR, n_hidden=N_HIDDEN)
 # Draw samples from posterior:
 with neural_net_model:
     idata = pm.sample(draws=N_samples, tune=N_tuning, init="advi+adapt_diag", random_seed=42, target_accept=target_accept, max_treedepth=max_treedepth)
@@ -249,15 +294,21 @@ def plot_posterior_CI(args):
     plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameter_dictionary[ii], PLOT_PARAMETERS=True, PLOT_TREATMENTS=False, plot_title="Posterior CI for training patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant)
     return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
 
-args = [(sample_shape, y_resolution, ii) for ii in range(N_patients)]
-with Pool(15) as pool:
-    results = pool.map(plot_posterior_CI,args)
-
+print("Plotting posterior credible bands for training cases")
+if SAVEDIR == "/data/evenmm/plots/":
+    print("(Not parallell)")
+    for ii in range(min(N_patients, 30)):
+        plot_posterior_CI((sample_shape, y_resolution, ii))
+else: 
+    print("(Parallell)")
+    args = [(sample_shape, y_resolution, ii) for ii in range(min(N_patients, 30))]
+    with Pool(15) as pool:
+        results = pool.map(plot_posterior_CI,args)
+print("...done.")
 
 # Generate test patients
 N_patients_test = 20
 test_seed = 23
-RANDOM_EFFECTS_TEST = False
 X_test, patient_dictionary_test, parameter_dictionary_test, expected_theta_1_test, true_theta_rho_s_test, true_rho_s_test = generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_test, P, get_expected_theta_from_X_2, true_omega, true_omega_for_psi, seed=test_seed, RANDOM_EFFECTS=RANDOM_EFFECTS_TEST)
 print("Done generating test patients")
 
@@ -356,10 +407,17 @@ def plot_predictions(args):
     plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameter_dictionary_test[ii], PLOT_PARAMETERS=True, PLOT_TREATMENTS=False, plot_title="Posterior predictive CI for test patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant)
     return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
 
-args = [(sample_shape, y_resolution, ii) for ii in range(N_patients_test)]
-with Pool(15) as pool:
-    results = pool.map(plot_predictions,args)
-
+print("Plotting predictive credible bands for test cases")
+if SAVEDIR == "/data/evenmm/plots/":
+    print("(Not parallell)")
+    for ii in range(N_patients_test):
+        plot_predictions((sample_shape, y_resolution, ii))
+else: 
+    print("(Parallell)")
+    args = [(sample_shape, y_resolution, ii) for ii in range(N_patients_test)]
+    with Pool(15) as pool:
+        results = pool.map(plot_predictions,args)
+print("...done.")
 
 # Checking that the X matches the observations and the precictions 
 expected_theta_1, expected_theta_2, expected_theta_3 = get_expected_theta_from_X_2(X)
