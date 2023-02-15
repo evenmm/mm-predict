@@ -56,19 +56,27 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
     with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as neural_net_model:
         # Observation noise (std)
         sigma_obs = pm.HalfNormal("sigma_obs", sigma=1)
+        #log_sigma_obs = pm.Normal("log_sigma_obs", mu=2*np.log(0.01), sigma=2**2)
+        #sigma_obs = pm.Deterministic("sigma_obs", np.exp(log_sigma_obs))
 
         # alpha
         alpha = pm.Normal("alpha",  mu=np.array([np.log(0.002), np.log(0.002), np.log(0.5/(1-0.5))]),  sigma=1, shape=3)
 
-        sigma_weights_in = pm.HalfNormal("sigma_weights_in", sigma=0.1)
+        #sigma_weights_in = pm.HalfNormal("sigma_weights_in", sigma=0.1)
+        #sigma_weights_in = pm.HalfNormal("sigma_weights_in", sigma=0.1, shape=(X.shape[0], 1))
+        log_sigma_weights_in = pm.Normal("log_sigma_weights_in", mu=2*np.log(0.01), sigma=2.5**2, shape=(X.shape[0], 1))
+        sigma_weights_in = pm.Deterministic("sigma_weights_in", np.exp(log_sigma_weights_in))
         if FUNNEL_WEIGHTS == True: # Funnel reparametrized weights: 
             # Weights input to 1st layer
             weights_in_rho_s_offset = pm.Normal("weights_in_rho_s_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
             weights_in_rho_r_offset = pm.Normal("weights_in_rho_r_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
             weights_in_pi_r_offset = pm.Normal("weights_in_pi_r_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
-            weights_in_rho_s = pm.Deterministic(("weights_in_rho_s", weights_in_rho_s_offset * sigma_weights_in)) # sigma_weights_in_rho_s))
-            weights_in_rho_r = pm.Deterministic(("weights_in_rho_r", weights_in_rho_r_offset * sigma_weights_in)) # sigma_weights_in_rho_r))
-            weights_in_pi_r = pm.Deterministic(("weights_in_pi_r", weights_in_pi_r_offset * sigma_weights_in)) # sigma_weights_in_pi_r))
+            #weights_in_rho_s = pm.Deterministic(("weights_in_rho_s", weights_in_rho_s_offset * sigma_weights_in))
+            #weights_in_rho_r = pm.Deterministic(("weights_in_rho_r", weights_in_rho_r_offset * sigma_weights_in))
+            #weights_in_pi_r = pm.Deterministic(("weights_in_pi_r", weights_in_pi_r_offset * sigma_weights_in))
+            weights_in_rho_s = pm.Deterministic("weights_in_rho_s", weights_in_rho_s_offset * np.repeat(sigma_weights_in, n_hidden, axis=1))
+            weights_in_rho_r = pm.Deterministic("weights_in_rho_r", weights_in_rho_r_offset * np.repeat(sigma_weights_in, n_hidden, axis=1))
+            weights_in_pi_r = pm.Deterministic("weights_in_pi_r", weights_in_pi_r_offset * np.repeat(sigma_weights_in, n_hidden, axis=1))
             # Weights from 1st to 2nd layer
             if WEIGHT_PRIOR == "iso_normal":
                 weights_out_rho_s_offset = pm.Normal("weights_out_rho_s_offset ", mu=0, sigma=1, shape=(n_hidden, ))
@@ -80,14 +88,14 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
                 weights_out_rho_r_offset = pm.HalfNormal("weights_out_rho_r_offset ", sigma=1, shape=(n_hidden, ))
                 weights_out_pi_r_offset = pm.HalfNormal("weights_out_pi_r_offset ", sigma=1, shape=(n_hidden, ))
             sigma_weights_out = pm.HalfNormal("sigma_weights_out", sigma=0.1)
-            weights_out_rho_s = pm.Deterministic(("weights_out_rho_s", weights_out_rho_s_offset * sigma_weights_out))
-            weights_out_rho_r = pm.Deterministic(("weights_out_rho_r", weights_out_rho_r_offset * sigma_weights_out))
-            weights_out_pi_r = pm.Deterministic(("weights_out_pi_r", weights_out_pi_r_offset * sigma_weights_out))
+            weights_out_rho_s = pm.Deterministic("weights_out_rho_s", weights_out_rho_s_offset * sigma_weights_out)
+            weights_out_rho_r = pm.Deterministic("weights_out_rho_r", weights_out_rho_r_offset * sigma_weights_out)
+            weights_out_pi_r = pm.Deterministic("weights_out_pi_r", weights_out_pi_r_offset * sigma_weights_out)
         else:
             # Weights input to 1st layer
-            weights_in_rho_s = pm.Normal('weights_in_rho_s', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1)
-            weights_in_rho_r = pm.Normal('weights_in_rho_r', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1)
-            weights_in_pi_r = pm.Normal('weights_in_pi_r', 0, sigma=sigma_weights_in, shape=(X.shape[0], n_hidden), initval=init_1)
+            weights_in_rho_s = pm.Normal('weights_in_rho_s', 0, sigma=np.repeat(sigma_weights_in, n_hidden, axis=1), shape=(X.shape[0], n_hidden), initval=init_1)
+            weights_in_rho_r = pm.Normal('weights_in_rho_r', 0, sigma=np.repeat(sigma_weights_in, n_hidden, axis=1), shape=(X.shape[0], n_hidden), initval=init_1)
+            weights_in_pi_r = pm.Normal('weights_in_pi_r', 0, sigma=np.repeat(sigma_weights_in, n_hidden, axis=1), shape=(X.shape[0], n_hidden), initval=init_1)
             # Weights from 1st to 2nd layer
             if WEIGHT_PRIOR == "iso_normal":
                 sigma_weights_out = pm.HalfNormal("sigma_weights_out", sigma=0.1)
@@ -109,7 +117,7 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
         bias_in_rho_s = pm.Normal("bias_in_rho_s", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_s
         bias_in_rho_r = pm.Normal("bias_in_rho_r", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_r
         bias_in_pi_r = pm.Normal("bias_in_pi_r", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_pi_r
-        # Should include this! 
+        
         sigma_bias_out = pm.HalfNormal("sigma_bias_out", sigma=1)
         bias_out_rho_s = pm.Normal("bias_out_rho_s", mu=0, sigma=sigma_bias_out)
         bias_out_rho_r = pm.Normal("bias_out_rho_r", mu=0, sigma=sigma_bias_out)

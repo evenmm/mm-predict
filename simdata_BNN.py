@@ -12,6 +12,7 @@ import multiprocessing
 from BNN_model import *
 # Initialize random number generator
 RANDOM_SEED = 42
+np.random.seed(RANDOM_SEED)
 rng = np.random.default_rng(RANDOM_SEED)
 print(f"Running on PyMC v{pm.__version__}")
 SAVEDIR = "/data/evenmm/plots/"
@@ -27,7 +28,7 @@ elif int(script_index % 3) == 1:
 elif int(script_index % 3) == 2:
     true_sigma_obs = 5
 
-if script_index > 3:
+if script_index >= 3:
     RANDOM_EFFECTS = True
 else: 
     RANDOM_EFFECTS = False
@@ -36,14 +37,14 @@ RANDOM_EFFECTS_TEST = False
 
 N_patients = 150
 psi_prior="lognormal"
-WEIGHT_PRIOR = "symmetry_fix" #"iso_normal" "Student_out"
-N_samples = 1000
-N_tuning = 1000
+WEIGHT_PRIOR = "Student_out" #"symmetry_fix" #"iso_normal" "Student_out"
+N_samples = 10000
+N_tuning = 10000
 target_accept = 0.99
 max_treedepth = 10
 FUNNEL_REPARAMETRIZATION = False
 MODEL_RANDOM_EFFECTS = True
-N_HIDDEN = 3
+N_HIDDEN = 2
 P = 3 # Number of covariates
 P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
 true_omega = np.array([0.10, 0.05, 0.20])
@@ -55,7 +56,7 @@ true_omega_for_psi = 0.1
 days_between_measurements = int(1500/M_number_of_measurements)
 measurement_times = days_between_measurements * np.linspace(0, M_number_of_measurements-1, M_number_of_measurements)
 treatment_history = np.array([Treatment(start=0, end=measurement_times[-1], id=1)])
-name = "simdata_BNN_"+str(script_index)+"_M_"+str(M_number_of_measurements)+"_P_"+str(P)+"_N_patients_"+str(N_patients)+"_psi_prior_"+psi_prior+"_N_samples_"+str(N_samples)+"_N_tuning_"+str(N_tuning)+"_target_accept_"+str(target_accept)+"_max_treedepth_"+str(max_treedepth)+"_FUNNEL_REPARAMETRIZATION_"+str(FUNNEL_REPARAMETRIZATION)+"_RANDOM_EFFECTS_"+str(RANDOM_EFFECTS)+"_WEIGHT_PRIOR_"+str(WEIGHT_PRIOR+"_N_HIDDEN_"+str(N_HIDDEN))
+name = "simdata_BNN_"+str(script_index)+"_M_"+str(M_number_of_measurements)+"_P_"+str(P)+"_N_pax_"+str(N_patients)+"_N_sampl_"+str(N_samples)+"_N_tune_"+str(N_tuning)+"_FUNNEL_"+str(FUNNEL_REPARAMETRIZATION)+"_RNDM_EFFECTS_"+str(RANDOM_EFFECTS)+"_WT_PRIOR_"+str(WEIGHT_PRIOR+"_N_HIDDN_"+str(N_HIDDEN))
 print("Running "+name)
 
 # Function to get expected theta from X
@@ -128,7 +129,7 @@ if VISZ:
     ax.set_ylabel("expected_theta_1")
     cbar = fig.colorbar(points)
     cbar.set_label('covariate 2', rotation=90)
-    plt.savefig(SAVEDIR+"_effects_1_"+name+".pdf", dpi=300)
+    plt.savefig(SAVEDIR+"effects_1_"+name+".pdf", dpi=300)
     plt.close()
 
     fig, ax = plt.subplots()
@@ -138,7 +139,7 @@ if VISZ:
     ax.set_ylabel("true_theta_rho_s")
     cbar = fig.colorbar(points)
     cbar.set_label('covariate 2', rotation=90)
-    plt.savefig(SAVEDIR+"_effects_2_"+name+".pdf", dpi=300)
+    plt.savefig(SAVEDIR+"effects_2_"+name+".pdf", dpi=300)
     plt.close()
 
     fig, ax = plt.subplots()
@@ -148,7 +149,7 @@ if VISZ:
     ax.set_ylabel("true_rho_s")
     cbar = fig.colorbar(points)
     cbar.set_label('covariate 2', rotation=90)
-    plt.savefig(SAVEDIR+"_effects_3_"+name+".pdf", dpi=300)
+    plt.savefig(SAVEDIR+"effects_3_"+name+".pdf", dpi=300)
     plt.close()
 
 # Sample from full model
@@ -198,34 +199,70 @@ quasi_geweke_test(idata, first=0.1, last=0.5)
 az.plot_autocorr(idata, var_names=["sigma_obs"])
 
 az.plot_trace(idata, var_names=('alpha', 'omega', 'sigma_obs'), combined=True)
-plt.savefig(SAVEDIR+name+"-plot_posterior_group_parameters.pdf", dpi=300)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_group_parameters.pdf", dpi=300)
 
 # Plot weights in_1 rho_s
 az.plot_trace(idata, var_names=('weights_in_rho_s'), combined=False, compact=False)
-plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_weights_in_1_rho_s.pdf", dpi=300)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_s.pdf", dpi=300)
 # Plot weights in_1 rho_r
 az.plot_trace(idata, var_names=('weights_in_rho_r'), combined=False, compact=False)
-plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_weights_in_1_rho_r.pdf", dpi=300)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_r.pdf", dpi=300)
 # Plot weights in_1 pi_r
 az.plot_trace(idata, var_names=('weights_in_pi_r'), combined=False, compact=False)
-plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_weights_in_1_pi_r.pdf", dpi=300)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_in_1_pi_r.pdf", dpi=300)
 
 # Plot weights 2_out rho_s
 az.plot_trace(idata, var_names=('weights_out_rho_s'), combined=False, compact=False)
-plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_weights_out_rho_s.pdf", dpi=300)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_out_rho_s.pdf", dpi=300)
 # Plot weights 2_out rho_r
 az.plot_trace(idata, var_names=('weights_out_rho_r'), combined=False, compact=False)
-plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_weights_out_rho_r.pdf", dpi=300)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_out_rho_r.pdf", dpi=300)
 # Plot weights 2_out pi_r
 az.plot_trace(idata, var_names=('weights_out_pi_r'), combined=False, compact=False)
-plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_weights_out_pi_r.pdf", dpi=300)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_out_pi_r.pdf", dpi=300)
+
+# Combined means combined chains
+# Plot weights in_1 rho_s
+az.plot_trace(idata, var_names=('weights_in_rho_s'), combined=True, compact=False)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_s_combined.pdf", dpi=300)
+# Plot weights in_1 rho_r
+az.plot_trace(idata, var_names=('weights_in_rho_r'), combined=True, compact=False)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_r_combined.pdf", dpi=300)
+# Plot weights in_1 pi_r
+az.plot_trace(idata, var_names=('weights_in_pi_r'), combined=True, compact=False)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_in_1_pi_r_combined.pdf", dpi=300)
+
+# Plot weights 2_out rho_s
+az.plot_trace(idata, var_names=('weights_out_rho_s'), combined=True, compact=False)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_out_rho_s_combined.pdf", dpi=300)
+# Plot weights 2_out rho_r
+az.plot_trace(idata, var_names=('weights_out_rho_r'), combined=True, compact=False)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_out_rho_r_combined.pdf", dpi=300)
+# Plot weights 2_out pi_r
+az.plot_trace(idata, var_names=('weights_out_pi_r'), combined=True, compact=False)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_wts_out_pi_r_combined.pdf", dpi=300)
 
 if psi_prior=="lognormal":
     az.plot_trace(idata, var_names=('xi'), combined=True)
-    plt.savefig(SAVEDIR+name+"-plot_posterior_group_parameters_xi.pdf", dpi=300)
+    plt.tight_layout()
+    plt.savefig(SAVEDIR+name+"-_group_parameters_xi.pdf", dpi=300)
     plt.close()
 az.plot_trace(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), combined=True)
-plt.savefig(SAVEDIR+name+"-plot_posterior_individual_parameters.pdf", dpi=300)
+plt.tight_layout()
+plt.savefig(SAVEDIR+name+"-_individual_parameters.pdf", dpi=300)
 plt.close()
 # Test of exploration 
 #az.plot_energy(idata)
@@ -233,15 +270,15 @@ plt.close()
 #plt.close()
 # Plot of coefficients
 az.plot_forest(idata, var_names=["alpha"], combined=True, hdi_prob=0.95, r_hat=True)
-plt.savefig(SAVEDIR+name+"-plot_forest_alpha.pdf", dpi=300)
+plt.savefig(SAVEDIR+name+"-forest_alpha.pdf", dpi=300)
 az.plot_forest(idata, var_names=["theta_rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
-plt.savefig(SAVEDIR+name+"-plot_forest_theta_rho_s.pdf", dpi=300)
+plt.savefig(SAVEDIR+name+"-forest_theta_rho_s.pdf", dpi=300)
 plt.close()
 az.plot_forest(idata, var_names=["theta_rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
-plt.savefig(SAVEDIR+name+"-plot_forest_theta_rho_r.pdf", dpi=300)
+plt.savefig(SAVEDIR+name+"-forest_theta_rho_r.pdf", dpi=300)
 plt.close()
 az.plot_forest(idata, var_names=["theta_pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
-plt.savefig(SAVEDIR+name+"-plot_forest_theta_pi_r.pdf", dpi=300)
+plt.savefig(SAVEDIR+name+"-forest_theta_pi_r.pdf", dpi=300)
 plt.close()
 
 
@@ -252,13 +289,20 @@ var_dimensions = sample_shape[2] # one per patient
 
 
 # Posterior CI for train data
-N_rand_obs_pred_train = 10000 # Number of observation noise samples to draw for each parameter sample
+if N_samples <= 10:
+    N_rand_obs_pred_train = 10000 # Number of observation noise samples to draw for each parameter sample
+elif N_samples <= 100:
+    N_rand_obs_pred_train = 1000 # Number of observation noise samples to draw for each parameter sample
+elif N_samples <= 1000:
+    N_rand_obs_pred_train = 100 # Number of observation noise samples to draw for each parameter sample
+else:
+    N_rand_obs_pred_train = 10 # Number of observation noise samples to draw for each parameter sample
 def plot_posterior_CI(args):
     sample_shape, y_resolution, ii = args
     n_chains = sample_shape[0]
     n_samples = sample_shape[1]
     var_dimensions = sample_shape[2] # one per patient
-    np.random.seed(ii) # Seeding the randomness in observation noise sigma, in random effects and in psi = yi0 + random(sigma)
+    np.random.seed(ii) # Seeding the randomness in observation noise sigma
 
     patient = patient_dictionary[ii]
     measurement_times = patient.get_measurement_times() 
@@ -295,15 +339,13 @@ def plot_posterior_CI(args):
     return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
 
 print("Plotting posterior credible bands for training cases")
-if SAVEDIR == "/data/evenmm/plots/":
-    print("(Not parallell)")
-    for ii in range(min(N_patients, 30)):
-        plot_posterior_CI((sample_shape, y_resolution, ii))
-else: 
-    print("(Parallell)")
-    args = [(sample_shape, y_resolution, ii) for ii in range(min(N_patients, 30))]
-    with Pool(15) as pool:
-        results = pool.map(plot_posterior_CI,args)
+args = [(sample_shape, y_resolution, ii) for ii in range(min(N_patients, 30))]
+if SAVEDIR == "./plots/Bayesian_estimates_simdata_BNN/":
+    poolworkers = 15
+else:
+    poolworkers = 4 
+with Pool(poolworkers) as pool:
+    results = pool.map(plot_posterior_CI,args)
 print("...done.")
 
 # Generate test patients
@@ -313,8 +355,18 @@ X_test, patient_dictionary_test, parameter_dictionary_test, expected_theta_1_tes
 print("Done generating test patients")
 
 # Posterior predictive CI for test data
-N_rand_eff_pred = 100 # Number of random intercept samples to draw for each idata sample when we make predictions
-N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
+if N_samples <= 10:
+    N_rand_eff_pred = 100 # Number of random intercept samples to draw for each idata sample when we make predictions
+    N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
+elif N_samples <= 100:
+    N_rand_eff_pred = 10 # Number of random intercept samples to draw for each idata sample when we make predictions
+    N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
+elif N_samples <= 1000:
+    N_rand_eff_pred = 1 # Number of random intercept samples to draw for each idata sample when we make predictions
+    N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
+else:
+    N_rand_eff_pred = 1 # Number of random intercept samples to draw for each idata sample when we make predictions
+    N_rand_obs_pred = 10 # Number of observation noise samples to draw for each parameter sample 
 def plot_predictions(args):
     sample_shape, y_resolution, ii = args
     n_chains = sample_shape[0]
@@ -403,20 +455,14 @@ def plot_predictions(args):
     sorted_local_pred_y_values = np.sort(flat_pred_y_values, axis=0)
     flat_pred_resistant = np.reshape(predicted_y_resistant_values, (n_chains*n_samples*N_rand_eff_pred*N_rand_obs_pred,y_resolution))
     sorted_pred_resistant = np.sort(flat_pred_resistant, axis=0)
-    savename = SAVEDIR+"CI_new_test_id_"+str(ii)+"_"+name+".pdf"
+    savename = SAVEDIR+"CI_test_id_"+str(ii)+"_"+name+".pdf"
     plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameter_dictionary_test[ii], PLOT_PARAMETERS=True, PLOT_TREATMENTS=False, plot_title="Posterior predictive CI for test patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant)
     return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
 
 print("Plotting predictive credible bands for test cases")
-if SAVEDIR == "/data/evenmm/plots/":
-    print("(Not parallell)")
-    for ii in range(N_patients_test):
-        plot_predictions((sample_shape, y_resolution, ii))
-else: 
-    print("(Parallell)")
-    args = [(sample_shape, y_resolution, ii) for ii in range(N_patients_test)]
-    with Pool(15) as pool:
-        results = pool.map(plot_predictions,args)
+args = [(sample_shape, y_resolution, ii) for ii in range(N_patients_test)]
+with Pool(poolworkers) as pool:
+    results = pool.map(plot_predictions,args)
 print("...done.")
 
 # Checking that the X matches the observations and the precictions 

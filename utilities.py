@@ -361,6 +361,8 @@ def generate_simulated_patients(measurement_times, treatment_history, true_sigma
 
     expected_theta_1, expected_theta_2, expected_theta_3 = get_expected_theta_from_X(X)
 
+    # Set the seed again to make the random effects not change with P
+    np.random.seed(seed+1)
     if RANDOM_EFFECTS:
         true_theta_rho_s = np.random.normal(expected_theta_1, true_omega[0])
         true_theta_rho_r = np.random.normal(expected_theta_2, true_omega[1])
@@ -370,6 +372,8 @@ def generate_simulated_patients(measurement_times, treatment_history, true_sigma
         true_theta_rho_r = expected_theta_2
         true_theta_pi_r  = expected_theta_3
 
+    # Set the seed again to get identical observation noise irrespective of random effects or not
+    np.random.seed(seed+2)
     psi_population = 50
     true_theta_psi = np.random.normal(np.log(psi_population), true_omega_for_psi, size=N_patients_local)
     true_rho_s = - np.exp(true_theta_rho_s)
