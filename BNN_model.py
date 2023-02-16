@@ -1,10 +1,6 @@
 from utilities import *
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 import arviz as az
 import pymc as pm
-import aesara.tensor as at
 # Initialize random number generator
 RANDOM_SEED = 42
 rng = np.random.default_rng(RANDOM_SEED)

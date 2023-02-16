@@ -687,7 +687,7 @@ def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pr
     #plt.show()
     plt.close()
 
-def plot_posterior_local_confidence_intervals(training_instance_id, patient, sorted_local_pred_y_values, parameters=[], PLOT_PARAMETERS=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000, n_chains=4, n_samples=1000, sorted_resistant_mprotein=[]):
+def plot_posterior_local_confidence_intervals(training_instance_id, patient, sorted_local_pred_y_values, parameters=[], PLOT_PARAMETERS=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000, n_chains=4, n_samples=1000, sorted_resistant_mprotein=[], PLOT_MEASUREMENTS = True):
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
     Mprotein_values = patient.get_Mprotein_values()
@@ -735,7 +735,8 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
         ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='cyan', label="True M protein (total)")
 
     # Plot M protein observations
-    ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=4, color='k', label="Observed M protein") #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
+    if PLOT_MEASUREMENTS == True:
+        ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=4, color='k', label="Observed M protein") #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
 
     # Plot treatments
     if PLOT_TREATMENTS:

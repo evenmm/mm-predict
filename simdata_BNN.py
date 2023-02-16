@@ -1,15 +1,6 @@
 from utilities import *
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import arviz as az
-import pymc as pm
-import aesara.tensor as at
-import multiprocessing
-#from create_training_instance_dictionary_with_covariates import *
-#from feature_extraction import *
-#from sample_from_full_model import *
 from BNN_model import *
+
 # Initialize random number generator
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
@@ -456,7 +447,7 @@ def plot_predictions(args):
     flat_pred_resistant = np.reshape(predicted_y_resistant_values, (n_chains*n_samples*N_rand_eff_pred*N_rand_obs_pred,y_resolution))
     sorted_pred_resistant = np.sort(flat_pred_resistant, axis=0)
     savename = SAVEDIR+"CI_test_id_"+str(ii)+"_"+name+".pdf"
-    plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameter_dictionary_test[ii], PLOT_PARAMETERS=True, PLOT_TREATMENTS=False, plot_title="Posterior predictive CI for test patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant)
+    plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameter_dictionary_test[ii], PLOT_PARAMETERS=True, PLOT_TREATMENTS=False, plot_title="Posterior predictive CI for test patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant, PLOT_MEASUREMENTS = False)
     return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
 
 print("Plotting predictive credible bands for test cases")
