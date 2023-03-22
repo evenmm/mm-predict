@@ -32,7 +32,6 @@ WEIGHT_PRIOR = "Student_out" #"symmetry_fix" #"iso_normal" "Student_out"
 N_samples = 10000
 N_tuning = 10000
 target_accept = 0.99
-max_treedepth = 10
 FUNNEL_REPARAMETRIZATION = False
 MODEL_RANDOM_EFFECTS = True
 N_HIDDEN = 2
@@ -147,7 +146,7 @@ if VISZ:
 neural_net_model = BNN_model(X, patient_dictionary, name, psi_prior=psi_prior, MODEL_RANDOM_EFFECTS=MODEL_RANDOM_EFFECTS, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION, WEIGHT_PRIOR=WEIGHT_PRIOR, n_hidden=N_HIDDEN)
 # Draw samples from posterior:
 with neural_net_model:
-    idata = pm.sample(draws=N_samples, tune=N_tuning, init="advi+adapt_diag", random_seed=42, target_accept=target_accept, max_treedepth=max_treedepth)
+    idata = pm.sample(draws=N_samples, tune=N_tuning, init="advi+adapt_diag", random_seed=42, target_accept=target_accept)
 # This is an xArray: https://docs.xarray.dev/en/v2022.11.0/user-guide/data-structures.html
 print("Done sampling")
 
