@@ -13,11 +13,20 @@ import warnings
 from multiprocessing import Pool
 #from drug_colors import *
 import seaborn as sns
+import arviz as az
+import pymc as pm
 
 def isNaN(string):
     return string != string
 def Sort(sub_li): # Sorts a list of sublists on the second element in the list 
     return(sorted(sub_li, key = lambda x: x[1]))
+def find_max_time(measurement_times):
+    # Plot until last measurement time (last in array, or first nan in array)
+    if np.isnan(measurement_times).any():
+        last_time_index = np.where(np.isnan(measurement_times))[0][0] -1 # Last non-nan index
+    else:
+        last_time_index = -1
+    return int(measurement_times[last_time_index])
 
 s = 25 # scatter plot object size
 GROWTH_LB = 0.001
@@ -155,6 +164,26 @@ class Patient:
         return self.Mprotein_values
     def get_covariates(self):
         return self.covariates
+
+class Real_Patient: 
+    def __init__(self, Mprotein_values, measurement_times, covariates = [], name = "no_id"):
+        self.Mprotein_values = Mprotein_values # numpy array
+        self.treatment_history = np.array([Treatment(start=0, end=measurement_times[-1], id=1)])
+        self.measurement_times = measurement_times # numpy array
+        self.covariates = covariates # Optional 
+        self.name = name # id
+    def get_treatment_history(self):
+        return self.treatment_history
+    def get_Mprotein_values(self):
+        return self.Mprotein_values
+    def get_measurement_times(self):
+        return self.measurement_times
+    def get_covariates(self):
+        return self.covariates
+    def add_Mprotein_line_to_patient(self, time, Mprotein):
+        self.measurement_times = np.append(self.measurement_times,[time])
+        self.Mprotein_values = np.append(self.Mprotein_values,[Mprotein])
+        return 0
 
 class COMMPASS_Patient: 
     def __init__(self, measurement_times, drug_dates, drug_history, treatment_history, Mprotein_values, Kappa_values, Lambda_values, covariates, name):
@@ -399,12 +428,30 @@ def generate_simulated_patients(measurement_times, treatment_history, true_sigma
 # Plotting
 #####################################
 #treat_colordict = dict(zip(treatment_line_ids, treat_line_colors))
+def plot_mprotein(patient, title, savename):
+    measurement_times = patient.measurement_times
+    Mprotein_values = patient.Mprotein_values
+    
+    fig, ax1 = plt.subplots()
+    ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=3, color='k', label="Observed M protein")
+
+    ax1.set_title(title)
+    ax1.set_xlabel("Days")
+    ax1.set_ylabel("Serum Mprotein (g/L)")
+    ax1.set_ylim(bottom=0)
+    ax1.set_zorder(ax1.get_zorder()+3)
+    ax1.legend()
+    fig.tight_layout()
+    plt.savefig(savename,dpi=300)
+    plt.close()
+
 def plot_true_mprotein_with_observations_and_treatments_and_estimate(true_parameters, patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title="Patient 1", savename=0):
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
     Mprotein_values = patient.get_Mprotein_values()
     first_time = min(measurement_times[0], treatment_history[0].start)
-    plotting_times = np.linspace(first_time, int(measurement_times[-1]), int((measurement_times[-1]+1)*10))
+    max_time = find_max_time(measurement_times)
+    plotting_times = np.linspace(first_time, max_time, int((measurement_times[-1]+1)*10))
     
     # Plot true M protein values according to true parameters
     plotting_mprotein_values = measure_Mprotein_noiseless(true_parameters, plotting_times, treatment_history)
@@ -477,7 +524,7 @@ def plot_treatment_region_with_estimate(true_parameters, patient, estimated_para
     treatment_history = patient.get_treatment_history()
     Mprotein_values = patient.get_Mprotein_values()
     time_zero = min(treatment_history[0].start, measurement_times[0])
-    time_max = max(treatment_history[-1].end, int(measurement_times[-1]))
+    time_max = find_max_time(measurement_times)
     plotting_times = np.linspace(time_zero, time_max, int((measurement_times[-1]+1)*10))
     
     # Plot true M protein values according to true parameters
@@ -548,7 +595,7 @@ def plot_to_compare_estimated_and_predicted_drug_dynamics(true_parameters, predi
     treatment_history = patient.get_treatment_history()
     Mprotein_values = patient.get_Mprotein_values()
     time_zero = min(treatment_history[0].start, measurement_times[0])
-    time_max = max(treatment_history[-1].end, int(measurement_times[-1]))
+    time_max = find_max_time(measurement_times)
     plotting_times = np.linspace(time_zero, time_max, int((measurement_times[-1]+1)*10))
     
     # Plot true M protein values according to true parameters
@@ -623,7 +670,7 @@ def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pr
     treatment_history = patient.get_treatment_history()
     Mprotein_values = patient.get_Mprotein_values()
     time_zero = min(treatment_history[0].start, measurement_times[0])
-    time_max = max(treatment_history[-1].end, int(measurement_times[-1]))
+    time_max = find_max_time(measurement_times)
     plotting_times = np.linspace(time_zero, time_max, y_resolution)
     
     fig, ax1 = plt.subplots()
@@ -692,7 +739,7 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
     treatment_history = patient.get_treatment_history()
     Mprotein_values = patient.get_Mprotein_values()
     time_zero = min(treatment_history[0].start, measurement_times[0])
-    time_max = max(treatment_history[-1].end, int(measurement_times[-1]))
+    time_max = find_max_time(measurement_times)
     plotting_times = np.linspace(time_zero, time_max, y_resolution)
     
     fig, ax1 = plt.subplots()
@@ -770,6 +817,386 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
     fig.tight_layout()
     plt.savefig(savename, dpi=300) #, bbox_extra_artists=(lgd), bbox_inches='tight')
     plt.close()
+
+def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model, patientwise=True):
+    if model == "linear":
+        print("Plotting posterior/trace plots")
+        # Autocorrelation plots: 
+        az.plot_autocorr(idata, var_names=["sigma_obs"])
+
+        az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma_obs'), combined=True)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_group_parameters.pdf", dpi=300)
+        plt.close()
+
+        az.plot_trace(idata, var_names=('beta_rho_s'), lines=[('beta_rho_s', {}, [0])], combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_beta_rho_s.pdf")
+        plt.close()
+
+        # Combined means combine the chains into one posterior. Compact means split into different subplots
+        az.plot_trace(idata, var_names=('beta_rho_r'), lines=[('beta_rho_r', {}, [0])], combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_beta_rho_r.pdf")
+        plt.close()
+
+        # Combined means combine the chains into one posterior. Compact means split into different subplots
+        az.plot_trace(idata, var_names=('beta_pi_r'), lines=[('beta_pi_r', {}, [0])], combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_beta_pi_r.pdf")
+        plt.close()
+    elif model == "BNN":
+        # Plot weights in_1 rho_s
+        az.plot_trace(idata, var_names=('weights_in_rho_s'), combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_s.pdf", dpi=300)
+        plt.close()
+        # Plot weights in_1 rho_r
+        az.plot_trace(idata, var_names=('weights_in_rho_r'), combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_r.pdf", dpi=300)
+        plt.close()
+        # Plot weights in_1 pi_r
+        az.plot_trace(idata, var_names=('weights_in_pi_r'), combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_pi_r.pdf", dpi=300)
+        plt.close()
+
+        # Plot weights 2_out rho_s
+        az.plot_trace(idata, var_names=('weights_out_rho_s'), combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_out_rho_s.pdf", dpi=300)
+        plt.close()
+        # Plot weights 2_out rho_r
+        az.plot_trace(idata, var_names=('weights_out_rho_r'), combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_out_rho_r.pdf", dpi=300)
+        plt.close()
+        # Plot weights 2_out pi_r
+        az.plot_trace(idata, var_names=('weights_out_pi_r'), combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_out_pi_r.pdf", dpi=300)
+        plt.close()
+
+        # Combined means combined chains
+        # Plot weights in_1 rho_s
+        az.plot_trace(idata, var_names=('weights_in_rho_s'), combined=True, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_s_combined.pdf", dpi=300)
+        plt.close()
+        # Plot weights in_1 rho_r
+        az.plot_trace(idata, var_names=('weights_in_rho_r'), combined=True, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_r_combined.pdf", dpi=300)
+        plt.close()
+        # Plot weights in_1 pi_r
+        az.plot_trace(idata, var_names=('weights_in_pi_r'), combined=True, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_pi_r_combined.pdf", dpi=300)
+        plt.close()
+
+        # Plot weights 2_out rho_s
+        az.plot_trace(idata, var_names=('weights_out_rho_s'), combined=True, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_out_rho_s_combined.pdf", dpi=300)
+        plt.close()
+        # Plot weights 2_out rho_r
+        az.plot_trace(idata, var_names=('weights_out_rho_r'), combined=True, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_out_rho_r_combined.pdf", dpi=300)
+        plt.close()
+        # Plot weights 2_out pi_r
+        az.plot_trace(idata, var_names=('weights_out_pi_r'), combined=True, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_out_pi_r_combined.pdf", dpi=300)
+        plt.close()
+    elif model == "joint_BNN":
+        # Plot weights in_1
+        az.plot_trace(idata, var_names=('weights_in'), combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_in_1.pdf", dpi=300)
+        plt.close()
+
+        # Plot weights 2_out
+        az.plot_trace(idata, var_names=('weights_out'), combined=False, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_out.pdf", dpi=300)
+        plt.close()
+
+        # Combined means combined chains
+        # Plot weights in_1
+        az.plot_trace(idata, var_names=('weights_in'), combined=True, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_combined.pdf", dpi=300)
+        plt.close()
+
+        # Plot weights 2_out
+        az.plot_trace(idata, var_names=('weights_out'), combined=True, compact=False)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_wts_out_combined.pdf", dpi=300)
+        plt.close()
+
+    if psi_prior=="lognormal":
+        az.plot_trace(idata, var_names=('xi'), combined=True)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_group_parameters_xi.pdf", dpi=300)
+        plt.close()
+    az.plot_trace(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), combined=True)
+    plt.tight_layout()
+    plt.savefig(SAVEDIR+name+"-_individual_parameters.pdf", dpi=300)
+    plt.close()
+    # Test of exploration 
+    az.plot_energy(idata)
+    plt.savefig(SAVEDIR+name+"-plot_energy.pdf", dpi=300)
+    plt.close()
+    # Plot of coefficients
+    az.plot_forest(idata, var_names=["alpha"], combined=True, hdi_prob=0.95, r_hat=True)
+    plt.savefig(SAVEDIR+name+"-forest_alpha.pdf", dpi=300)
+    plt.close()
+    if patientwise:
+        az.plot_forest(idata, var_names=["theta_rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
+        plt.savefig(SAVEDIR+name+"-forest_theta_rho_s.pdf", dpi=300)
+        plt.close()
+        az.plot_forest(idata, var_names=["theta_rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
+        plt.savefig(SAVEDIR+name+"-forest_theta_rho_r.pdf", dpi=300)
+        plt.close()
+        az.plot_forest(idata, var_names=["theta_pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
+        plt.savefig(SAVEDIR+name+"-forest_theta_pi_r.pdf", dpi=300)
+        plt.close()
+
+def plot_posterior_CI(args):
+    sample_shape, y_resolution, ii, idata, patient_dictionary, SAVEDIR, name, N_rand_obs_pred_train, model, parameter_dictionary, PLOT_PARAMETERS, CI_with_obs_noise = args
+    if not CI_with_obs_noise:
+        N_rand_obs_pred_train = 1
+    n_chains = sample_shape[0]
+    n_samples = sample_shape[1]
+    var_dimensions = sample_shape[2] # one per patient
+    np.random.seed(ii) # Seeding the randomness in observation noise sigma
+
+    patient = patient_dictionary[ii]
+    measurement_times = patient.get_measurement_times() 
+    treatment_history = patient.get_treatment_history()
+    first_time = min(measurement_times[0], treatment_history[0].start)
+    time_max = find_max_time(measurement_times)
+    plotting_times = np.linspace(first_time, time_max, y_resolution) #int((measurement_times[-1]+1)*10))
+    posterior_parameters = np.empty(shape=(n_chains, n_samples), dtype=object)
+    predicted_y_values = np.empty(shape=(n_chains, n_samples*N_rand_obs_pred_train, y_resolution))
+    predicted_y_resistant_values = np.empty_like(predicted_y_values)
+    for ch in range(n_chains):
+        for sa in range(n_samples):
+            this_sigma_obs = np.ravel(idata.posterior['sigma_obs'][ch,sa])
+            this_psi       = np.ravel(idata.posterior['psi'][ch,sa,ii])
+            this_pi_r      = np.ravel(idata.posterior['pi_r'][ch,sa,ii])
+            this_rho_s     = np.ravel(idata.posterior['rho_s'][ch,sa,ii])
+            this_rho_r     = np.ravel(idata.posterior['rho_r'][ch,sa,ii])
+            posterior_parameters[ch,sa] = Parameters(Y_0=this_psi, pi_r=this_pi_r, g_r=this_rho_r, g_s=this_rho_s, k_1=0, sigma=this_sigma_obs)
+            these_parameters = posterior_parameters[ch,sa]
+            resistant_parameters = Parameters((these_parameters.Y_0*these_parameters.pi_r), 1, these_parameters.g_r, these_parameters.g_s, these_parameters.k_1, these_parameters.sigma)
+            # Predicted total and resistant M protein
+            predicted_y_values_noiseless = measure_Mprotein_noiseless(these_parameters, plotting_times, treatment_history)
+            predicted_y_resistant_values_noiseless = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
+            # Add noise and make the resistant part the estimated fraction of the observed value
+            if CI_with_obs_noise:
+                for rr in range(N_rand_obs_pred_train):
+                    noise_array = np.random.normal(0, this_sigma_obs, y_resolution)
+                    predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values_noiseless + noise_array
+                    predicted_y_resistant_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] * (predicted_y_resistant_values_noiseless/(predicted_y_values_noiseless + 1e-15))
+            else: 
+                predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values_noiseless + noise_array
+                predicted_y_resistant_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] * (predicted_y_resistant_values_noiseless/(predicted_y_values_noiseless + 1e-15))
+    flat_pred_y_values = np.reshape(predicted_y_values, (n_chains*n_samples*N_rand_obs_pred_train,y_resolution))
+    sorted_local_pred_y_values = np.sort(flat_pred_y_values, axis=0)
+    flat_pred_resistant = np.reshape(predicted_y_resistant_values, (n_chains*n_samples*N_rand_obs_pred_train,y_resolution))
+    sorted_pred_resistant = np.sort(flat_pred_resistant, axis=0)
+    savename = SAVEDIR+"CI_training_id_"+str(ii)+"_"+name+".pdf"
+    if PLOT_PARAMETERS and len(parameter_dictionary) > 0:
+        parameters_ii = parameter_dictionary[ii]
+    else: 
+        parameters_ii = []
+    plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameters_ii, PLOT_PARAMETERS=PLOT_PARAMETERS, PLOT_TREATMENTS=False, plot_title="Posterior CI for training patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant)
+    return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
+
+def plot_predictions(args): # Predicts observations of M protein
+    #sample_shape, y_resolution, ii = args
+    sample_shape, y_resolution, ii, idata, X_test, patient_dictionary_test, SAVEDIR, name, N_rand_eff_pred, N_rand_obs_pred, model, parameter_dictionary, PLOT_PARAMETERS, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise = args
+    if not CI_with_obs_noise:
+        N_rand_eff_pred = N_rand_eff_pred * N_rand_obs_pred
+        N_rand_obs_pred = 1
+    n_chains = sample_shape[0]
+    n_samples = sample_shape[1]
+    var_dimensions = sample_shape[2] # one per patient
+    np.random.seed(ii) # Seeding the randomness in observation noise sigma, in random effects and in psi = yi0 + random(sigma)
+
+    patient = patient_dictionary_test[ii]
+    measurement_times = patient.get_measurement_times() 
+    treatment_history = patient.get_treatment_history()
+    first_time = min(measurement_times[0], treatment_history[0].start)
+    max_time = find_max_time(measurement_times)
+    plotting_times = np.linspace(first_time, max_time, y_resolution) #int((measurement_times[-1]+1)*10))
+    predicted_parameters = np.empty(shape=(n_chains, n_samples), dtype=object)
+    predicted_y_values = np.empty(shape=(n_chains*N_rand_eff_pred, n_samples*N_rand_obs_pred, y_resolution))
+    predicted_y_resistant_values = np.empty_like(predicted_y_values)
+    for ch in range(n_chains):
+        for sa in range(n_samples):
+            sigma_obs = np.ravel(idata.posterior['sigma_obs'][ch,sa])
+            alpha = np.ravel(idata.posterior['alpha'][ch,sa])
+
+            if model == "linear": 
+                this_beta_rho_s = np.ravel(idata.posterior['beta_rho_s'][ch,sa])
+                this_beta_rho_r = np.ravel(idata.posterior['beta_rho_r'][ch,sa])
+                this_beta_pi_r = np.ravel(idata.posterior['beta_pi_r'][ch,sa])
+            elif model == "BNN": 
+                # weights 
+                weights_in_rho_s = idata.posterior['weights_in_rho_s'][ch,sa]
+                weights_in_rho_r = idata.posterior['weights_in_rho_r'][ch,sa]
+                weights_in_pi_r = idata.posterior['weights_in_pi_r'][ch,sa]
+                weights_out_rho_s = idata.posterior['weights_out_rho_s'][ch,sa]
+                weights_out_rho_r = idata.posterior['weights_out_rho_r'][ch,sa]
+                weights_out_pi_r = idata.posterior['weights_out_pi_r'][ch,sa]
+
+                # intercepts
+                #sigma_bias_in = idata.posterior['sigma_bias_in'][ch,sa]
+                bias_in_rho_s = np.ravel(idata.posterior['bias_in_rho_s'][ch,sa])
+                bias_in_rho_r = np.ravel(idata.posterior['bias_in_rho_r'][ch,sa])
+                bias_in_pi_r = np.ravel(idata.posterior['bias_in_pi_r'][ch,sa])
+
+                pre_act_1_rho_s = np.dot(X_test.iloc[ii,:], weights_in_rho_s) + bias_in_rho_s
+                pre_act_1_rho_r = np.dot(X_test.iloc[ii,:], weights_in_rho_r) + bias_in_rho_r
+                pre_act_1_pi_r  = np.dot(X_test.iloc[ii,:], weights_in_pi_r)  + bias_in_pi_r
+
+                act_1_rho_s = np.select([pre_act_1_rho_s > 0, pre_act_1_rho_s <= 0], [pre_act_1_rho_s, pre_act_1_rho_s*0.01], 0)
+                act_1_rho_r = np.select([pre_act_1_rho_r > 0, pre_act_1_rho_r <= 0], [pre_act_1_rho_r, pre_act_1_rho_r*0.01], 0)
+                act_1_pi_r =  np.select([pre_act_1_pi_r  > 0, pre_act_1_pi_r  <= 0], [pre_act_1_pi_r,  pre_act_1_pi_r*0.01],  0)
+
+                # Output
+                act_out_rho_s = np.dot(act_1_rho_s, weights_out_rho_s)
+                act_out_rho_r = np.dot(act_1_rho_r, weights_out_rho_r)
+                act_out_pi_r =  np.dot(act_1_pi_r,  weights_out_pi_r)
+
+            elif model == "joint_BNN": 
+                # weights 
+                weights_in = idata.posterior['weights_in'][ch,sa]
+                weights_out = idata.posterior['weights_out'][ch,sa]
+
+                # intercepts
+                #sigma_bias_in = idata.posterior['sigma_bias_in'][ch,sa]
+                bias_in = np.ravel(idata.posterior['bias_in'][ch,sa])
+
+                pre_act_1 = np.dot(X_test.iloc[ii,:], weights_in) + bias_in
+
+                act_1 = np.select([pre_act_1 > 0, pre_act_1 <= 0], [pre_act_1, pre_act_1*0.01], 0)
+
+                # Output
+                act_out = np.dot(act_1, weights_out)
+                act_out_rho_s = act_out[0]
+                act_out_rho_r = act_out[1]
+                act_out_pi_r =  act_out[2]
+
+            # Random effects 
+            omega  = np.ravel(idata.posterior['omega'][ch,sa])
+            for ee in range(N_rand_eff_pred):
+                if model == "linear":
+                    #if MODEL_RANDOM_EFFECTS: 
+                    predicted_theta_1 = np.random.normal(alpha[0] + np.dot(X_test.iloc[ii,:], this_beta_rho_s), omega[0])
+                    predicted_theta_2 = np.random.normal(alpha[1] + np.dot(X_test.iloc[ii,:], this_beta_rho_r), omega[1])
+                    predicted_theta_3 = np.random.normal(alpha[2] + np.dot(X_test.iloc[ii,:], this_beta_pi_r), omega[2])
+                    #else: 
+                    #    predicted_theta_1 = alpha[0] + np.dot(X_test.iloc[ii,:], this_beta_rho_s)
+                    #    predicted_theta_2 = alpha[1] + np.dot(X_test.iloc[ii,:], this_beta_rho_r)
+                    #    predicted_theta_3 = alpha[2] + np.dot(X_test.iloc[ii,:], this_beta_pi_r)
+                elif model == "BNN" or model == "joint_BNN":
+                    if MODEL_RANDOM_EFFECTS:
+                        predicted_theta_1 = np.random.normal(alpha[0] + act_out_rho_s, omega[0])
+                        predicted_theta_2 = np.random.normal(alpha[1] + act_out_rho_r, omega[1])
+                        predicted_theta_3 = np.random.normal(alpha[2] + act_out_pi_r, omega[2])
+                    else: 
+                        predicted_theta_1 = alpha[0] + act_out_rho_s
+                        predicted_theta_2 = alpha[1] + act_out_rho_r
+                        predicted_theta_3 = alpha[2] + act_out_pi_r
+
+                predicted_rho_s = - np.exp(predicted_theta_1)
+                predicted_rho_r = np.exp(predicted_theta_2)
+                predicted_pi_r  = 1/(1+np.exp(-predicted_theta_3))
+
+                measurement_times = patient.get_measurement_times()
+                treatment_history = patient.get_treatment_history()
+                first_time = min(measurement_times[0], treatment_history[0].start)
+                time_max = find_max_time(measurement_times)
+                plotting_times = np.linspace(first_time, time_max, y_resolution) #int((measurement_times[-1]+1)*10))
+                this_psi = patient.Mprotein_values[0] + np.random.normal(0,sigma_obs)
+                predicted_parameters[ch,sa] = Parameters(Y_0=this_psi, pi_r=predicted_pi_r, g_r=predicted_rho_r, g_s=predicted_rho_s, k_1=0, sigma=sigma_obs)
+                these_parameters = predicted_parameters[ch,sa]
+                resistant_parameters = Parameters(Y_0=(these_parameters.Y_0*these_parameters.pi_r), pi_r=1, g_r=these_parameters.g_r, g_s=these_parameters.g_s, k_1=these_parameters.k_1, sigma=these_parameters.sigma)
+                # Predicted total and resistant M protein
+                predicted_y_values_noiseless = measure_Mprotein_noiseless(these_parameters, plotting_times, treatment_history)
+                predicted_y_resistant_values_noiseless = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
+                # Add noise and make the resistant part the estimated fraction of the observed value
+                if CI_with_obs_noise:
+                    for rr in range(N_rand_obs_pred):
+                        noise_array = np.random.normal(0, sigma_obs, y_resolution)
+                        predicted_y_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] = predicted_y_values_noiseless + noise_array
+                        predicted_y_resistant_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] = predicted_y_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] * (predicted_y_resistant_values_noiseless/(predicted_y_values_noiseless + 1e-15))
+                else: 
+                    predicted_y_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] = predicted_y_values_noiseless
+                    predicted_y_resistant_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] = predicted_y_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] * (predicted_y_resistant_values_noiseless/(predicted_y_values_noiseless + 1e-15))
+    flat_pred_y_values = np.reshape(predicted_y_values, (n_chains*n_samples*N_rand_eff_pred*N_rand_obs_pred,y_resolution))
+    sorted_local_pred_y_values = np.sort(flat_pred_y_values, axis=0)
+    flat_pred_resistant = np.reshape(predicted_y_resistant_values, (n_chains*n_samples*N_rand_eff_pred*N_rand_obs_pred,y_resolution))
+    sorted_pred_resistant = np.sort(flat_pred_resistant, axis=0)
+    savename = SAVEDIR+"CI_test_id_"+str(ii)+"_"+name+".pdf"
+    if PLOT_PARAMETERS and len(parameter_dictionary) > 0:
+        parameters_ii = parameter_dictionary[ii]
+    else:
+        parameters_ii = []
+    plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameters_ii, PLOT_PARAMETERS=PLOT_PARAMETERS, plot_title="Posterior predictive CI for test patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant, PLOT_MEASUREMENTS = False)
+    return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
+
+def plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_test, X_test, SAVEDIR, name, y_resolution, model, parameter_dictionary, PLOT_PARAMETERS, parameter_dictionary_test, PLOT_PARAMETERS_test, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise=True):
+    sample_shape = idata.posterior['psi'].shape # [chain, n_samples, dim]
+    N_chains = sample_shape[0]
+    N_samples = sample_shape[1]
+    var_dimensions = sample_shape[2] # one per patient
+
+    # Posterior CI for train data
+    if N_samples <= 10:
+        N_rand_obs_pred_train = 10000 # Number of observation noise samples to draw for each parameter sample
+    elif N_samples <= 100:
+        N_rand_obs_pred_train = 1000 # Number of observation noise samples to draw for each parameter sample
+    elif N_samples <= 1000:
+        N_rand_obs_pred_train = 100 # Number of observation noise samples to draw for each parameter sample
+    else:
+        N_rand_obs_pred_train = 10 # Number of observation noise samples to draw for each parameter sample
+    print("Plotting posterior credible bands for training cases")
+    N_patients = len(patient_dictionary)
+    args = [(sample_shape, y_resolution, ii, idata, patient_dictionary, SAVEDIR, name, N_rand_obs_pred_train, model, parameter_dictionary, PLOT_PARAMETERS, CI_with_obs_noise) for ii in range(min(N_patients, 20))]
+    if SAVEDIR in ["./plots/Bayesian_estimates_simdata_linearmodel/", "./plots/Bayesian_estimates_simdata_BNN/", "./plots/Bayesian_estimates_simdata_joint_BNN/"]:
+        poolworkers = 15
+    else:
+        poolworkers = 4 
+    with Pool(poolworkers) as pool:
+        results = pool.map(plot_posterior_CI,args)
+    print("...done.")
+
+    # Posterior predictive CI for test data
+    if N_samples <= 10:
+        N_rand_eff_pred = 100 # Number of random intercept samples to draw for each idata sample when we make predictions
+        N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
+    elif N_samples <= 100:
+        N_rand_eff_pred = 10 # Number of random intercept samples to draw for each idata sample when we make predictions
+        N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
+    elif N_samples <= 1000:
+        N_rand_eff_pred = 1 # Number of random intercept samples to draw for each idata sample when we make predictions
+        N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
+    else:
+        N_rand_eff_pred = 1 # Number of random intercept samples to draw for each idata sample when we make predictions
+        N_rand_obs_pred = 10 # Number of observation noise samples to draw for each parameter sample 
+    print("Plotting predictive credible bands for test cases")
+    N_patients_test = len(patient_dictionary_test)
+    args = [(sample_shape, y_resolution, ii, idata, X_test, patient_dictionary_test, SAVEDIR, name, N_rand_eff_pred, N_rand_obs_pred, model, parameter_dictionary_test, PLOT_PARAMETERS_test, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise) for ii in range(N_patients_test)]
+    with Pool(poolworkers) as pool:
+        results = pool.map(plot_predictions,args)
+    print("...done.")
+
 
 #####################################
 # Inference
@@ -955,19 +1382,18 @@ def get_binary_outcome(period_start, patient, this_estimate, days_for_considerat
 #####################################
 # Posterior evaluation
 #####################################
-"""
-def posterior(all_psi_i, theta):
-    likelihood_of_observed_M_given_psi_model_1 = 
-
-"""
 # Convergence checks
-def quasi_geweke_test(idata, first=0.1, last=0.5, intervals=20):
+def quasi_geweke_test(idata, model, first=0.1, last=0.5, intervals=20):
     if first+last > 1:
         print("Overriding input since first+last>1. New first, last = 0.1, 0.5")
         first, last = 0.1, 0.5
     print("Running Geweke test...")
     convergence_flag = True
-    for var_name in ['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r']:
+    if model == "linear":
+        var_names = ['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r']
+    elif model == "BNN":
+        var_names = ['alpha', 'omega', 'theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r']
+    for var_name in var_names:
         sample_shape = idata.posterior[var_name].shape
         n_chains = sample_shape[0]
         n_samples = sample_shape[1]
@@ -980,7 +1406,7 @@ def quasi_geweke_test(idata, first=0.1, last=0.5, intervals=20):
                 z_score = (np.mean(first_part)-np.mean(last_part)) / np.sqrt(np.var(first_part)+np.var(last_part))
                 if abs(z_score) >= 1.960:
                     convergence_flag = False
-                    print("Seems like chain",chain,"has not converged in",var_name,"dimension",dim,": z_score is",z_score)
+                    #print("Seems like chain",chain,"has not converged in",var_name,"dimension",dim,": z_score is",z_score)
     for var_name in ['sigma_obs']:
         all_samples = np.ravel(idata.posterior[var_name])
         n_samples = len(all_samples)
@@ -992,4 +1418,75 @@ def quasi_geweke_test(idata, first=0.1, last=0.5, intervals=20):
             print("Seems like chain",chain,"has not converged in",var_name,"dimension",dim,": z_score is",z_score)
     if convergence_flag:
         print("All chains seem to have converged.")
+    else:
+        print("Seems like some chains did not converge.")
     return 0
+
+################################
+# Data simulation
+################################
+
+# Function to get expected theta from X
+def get_expected_theta_from_X_one_interaction(X): # One interaction: In rho_s only
+    # These are the true parameters for a patient with all covariates equal to 0:
+    N_patients_local, P = X.shape
+    rho_s_population = -0.005
+    rho_r_population = 0.001
+    pi_r_population = 0.3
+    theta_rho_s_population_for_x_equal_to_zero = np.log(-rho_s_population)
+    theta_rho_r_population_for_x_equal_to_zero = np.log(rho_r_population)
+    theta_pi_r_population_for_x_equal_to_zero  = np.log(pi_r_population/(1-pi_r_population))
+
+    true_alpha = np.array([theta_rho_s_population_for_x_equal_to_zero, theta_rho_r_population_for_x_equal_to_zero, theta_pi_r_population_for_x_equal_to_zero])
+    true_beta_rho_s = np.zeros(P)
+    true_beta_rho_s[0] = 0.8
+    true_beta_rho_s[1] = 0
+    interaction_beta_x1_x2_rho_s = -1
+    true_beta_rho_r = np.zeros(P)
+    true_beta_rho_r[0] = 0.7
+    true_beta_rho_r[1] = 1.0
+    true_beta_pi_r = np.zeros(P)
+    true_beta_pi_r[0] = 0.0
+    true_beta_pi_r[1] = 1.1
+
+    expected_theta_1 = np.reshape(true_alpha[0] + np.dot(X, true_beta_rho_s) + np.ravel(interaction_beta_x1_x2_rho_s*X["Covariate 1"]*(X["Covariate 2"].T)), (N_patients_local,1))
+    expected_theta_2 = np.reshape(true_alpha[1] + np.dot(X, true_beta_rho_r), (N_patients_local,1))
+    expected_theta_3 = np.reshape(true_alpha[2] + np.dot(X, true_beta_pi_r), (N_patients_local,1))
+    return expected_theta_1, expected_theta_2, expected_theta_3
+
+def get_expected_theta_from_X_2(X): # One interaction: In rho_s only
+    N_patients_local, P = X.shape
+    # These are the true parameters for a patient with all covariates equal to 0:
+    rho_s_population = -0.005
+    rho_r_population = 0.001
+    pi_r_population = 0.3
+    theta_rho_s_population_for_x_equal_to_zero = np.log(-rho_s_population)
+    theta_rho_r_population_for_x_equal_to_zero = np.log(rho_r_population)
+    theta_pi_r_population_for_x_equal_to_zero  = np.log(pi_r_population/(1-pi_r_population))
+
+    true_alpha = np.array([theta_rho_s_population_for_x_equal_to_zero, theta_rho_r_population_for_x_equal_to_zero, theta_pi_r_population_for_x_equal_to_zero])
+    true_beta_rho_s = np.zeros(P)
+    true_beta_rho_s[0] = 0.8
+    true_beta_rho_s[1] = 0
+    true_beta_rho_s[2] = 0.4
+    #true_beta_rho_s[3] = 0.3
+    #true_beta_rho_s[4] = 0.2
+    interaction_beta_x1_x2_rho_s = -1
+    true_beta_rho_r = np.zeros(P)
+    true_beta_rho_r[0] = 0.7
+    true_beta_rho_r[1] = 1.0
+    true_beta_rho_r[2] = 0.4
+    #true_beta_rho_r[3] = 0.2
+    #true_beta_rho_r[4] = 0.1
+    true_beta_pi_r = np.zeros(P)
+    true_beta_pi_r[0] = 0.0
+    true_beta_pi_r[1] = 1.1
+    true_beta_pi_r[2] = 0.1
+    #true_beta_pi_r[3] = 0.3
+    #true_beta_pi_r[4] = 0.4
+    interaction_beta_x2_x3_pi_r = -0.6
+
+    expected_theta_1 = np.reshape(true_alpha[0] + np.dot(X, true_beta_rho_s) + np.ravel(interaction_beta_x1_x2_rho_s*X["Covariate 1"]*(X["Covariate 2"].T)), (N_patients_local,1))
+    expected_theta_2 = np.reshape(true_alpha[1] + np.dot(X, true_beta_rho_r), (N_patients_local,1))
+    expected_theta_3 = np.reshape(true_alpha[2] + np.dot(X, true_beta_pi_r)  + np.ravel(interaction_beta_x2_x3_pi_r*X["Covariate 2"]*(X["Covariate 3"].T)), (N_patients_local,1))
+    return expected_theta_1, expected_theta_2, expected_theta_3
