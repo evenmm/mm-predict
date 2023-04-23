@@ -166,10 +166,10 @@ class Patient:
         return self.covariates
 
 class Real_Patient: 
-    def __init__(self, Mprotein_values, measurement_times, covariates = [], name = "no_id"):
-        self.Mprotein_values = Mprotein_values # numpy array
-        self.treatment_history = np.array([Treatment(start=0, end=measurement_times[-1], id=1)])
+    def __init__(self, measurement_times, Mprotein_values, covariates = [], name = "no_id"):
         self.measurement_times = measurement_times # numpy array
+        self.treatment_history = np.array([Treatment(start=1, end=measurement_times[-1], id=1)])
+        self.Mprotein_values = Mprotein_values # numpy array
         self.covariates = covariates # Optional 
         self.name = name # id
     def get_treatment_history(self):
@@ -182,6 +182,7 @@ class Real_Patient:
         return self.covariates
     def add_Mprotein_line_to_patient(self, time, Mprotein):
         self.measurement_times = np.append(self.measurement_times,[time])
+        self.treatment_history = np.array([Treatment(start=1, end=time, id=1)])
         self.Mprotein_values = np.append(self.Mprotein_values,[Mprotein])
         return 0
 
@@ -410,6 +411,8 @@ def generate_simulated_patients(measurement_times, treatment_history, true_sigma
     true_pi_r  = 1/(1+np.exp(-true_theta_pi_r))
     true_psi = np.exp(true_theta_psi)
 
+    # Set seed again to give patient random Numbers of M protein
+    np.random.seed(seed+3)
     parameter_dictionary = {}
     patient_dictionary = {}
     for training_instance_id in range(N_patients_local):
@@ -418,7 +421,10 @@ def generate_simulated_patients(measurement_times, treatment_history, true_sigma
         rho_r_patient_i = true_rho_r[training_instance_id]
         rho_s_patient_i = true_rho_s[training_instance_id]
         these_parameters = Parameters(Y_0=psi_patient_i, pi_r=pi_r_patient_i, g_r=rho_r_patient_i, g_s=rho_s_patient_i, k_1=0, sigma=true_sigma_obs)
-        this_patient = Patient(these_parameters, measurement_times, treatment_history, name=str(training_instance_id))
+        # Remove some measurement times from the end: 
+        M_ii = np.random.randint(min(3,len(measurement_times)), len(measurement_times)+1)
+        measurement_times_ii = measurement_times[:M_ii]
+        this_patient = Patient(these_parameters, measurement_times_ii, treatment_history, name=str(training_instance_id))
         patient_dictionary[training_instance_id] = this_patient
         parameter_dictionary[training_instance_id] = these_parameters
         #plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=str(training_instance_id), savename="./plots/Bayes_simulated_data/"+str(training_instance_id)
@@ -734,7 +740,7 @@ def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pr
     #plt.show()
     plt.close()
 
-def plot_posterior_local_confidence_intervals(training_instance_id, patient, sorted_local_pred_y_values, parameters=[], PLOT_PARAMETERS=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000, n_chains=4, n_samples=1000, sorted_resistant_mprotein=[], PLOT_MEASUREMENTS = True):
+def plot_posterior_local_confidence_intervals(training_instance_id, patient, sorted_local_pred_y_values, parameters=[], PLOT_PARAMETERS=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000, n_chains=4, n_samples=1000, sorted_resistant_mprotein=[], PLOT_MEASUREMENTS = True, PLOT_RESISTANT=True):
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
     Mprotein_values = patient.get_Mprotein_values()
@@ -747,15 +753,16 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
 
     # Plot posterior confidence intervals for Resistant M protein
     # 95 % empirical confidence interval
-    if len(sorted_resistant_mprotein) > 0: 
-        for index, critical_value in enumerate([0.05, 0.25, 0.45]): # Corresponding to confidence levels 90, 50, and 10
-            # Get index to find right value 
-            lower_index = int(critical_value*sorted_resistant_mprotein.shape[0]) #n_chains*n_samples)
-            upper_index = int((1-critical_value)*sorted_resistant_mprotein.shape[0]) #n_chains*n_samples)
-            # index at intervals to get 95 % limit value
-            lower_limits = sorted_resistant_mprotein[lower_index,:]
-            upper_limits = sorted_resistant_mprotein[upper_index,:]
-            ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.copper(1-critical_value), label='%3.0f %% conf. for resistant M prot.' % (100*(1-2*critical_value)), zorder=0+index*0.1)
+    if PLOT_RESISTANT:
+        if len(sorted_resistant_mprotein) > 0: 
+            for index, critical_value in enumerate([0.05, 0.25, 0.45]): # Corresponding to confidence levels 90, 50, and 10
+                # Get index to find right value 
+                lower_index = int(critical_value*sorted_resistant_mprotein.shape[0]) #n_chains*n_samples)
+                upper_index = int((1-critical_value)*sorted_resistant_mprotein.shape[0]) #n_chains*n_samples)
+                # index at intervals to get 95 % limit value
+                lower_limits = sorted_resistant_mprotein[lower_index,:]
+                upper_limits = sorted_resistant_mprotein[upper_index,:]
+                ax1.fill_between(plotting_times, lower_limits, upper_limits, color=plt.cm.copper(1-critical_value), label='%3.0f %% conf. for resistant M prot.' % (100*(1-2*critical_value)), zorder=0+index*0.1)
 
     # Plot posterior confidence intervals for total M protein
     # 95 % empirical confidence interval
@@ -777,7 +784,8 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
         resistant_parameters = Parameters((parameters.Y_0*parameters.pi_r), 1, parameters.g_r, parameters.g_s, parameters.k_1, parameters.sigma)
         plotting_resistant_mprotein_values = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
         # Plot resistant M protein
-        ax1.plot(plotting_times, plotting_resistant_mprotein_values, linestyle='--', marker='', zorder=2.9, color=plt.cm.hot(0.2), label="True M protein (resistant)")
+        if PLOT_RESISTANT:
+            ax1.plot(plotting_times, plotting_resistant_mprotein_values, linestyle='--', marker='', zorder=2.9, color=plt.cm.hot(0.2), label="True M protein (resistant)")
         # Plot total M protein
         ax1.plot(plotting_times, plotting_mprotein_values, linestyle='--', marker='', zorder=3, color='cyan', label="True M protein (total)")
 
@@ -818,8 +826,8 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
     plt.savefig(savename, dpi=300) #, bbox_extra_artists=(lgd), bbox_inches='tight')
     plt.close()
 
-def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model, patientwise=True):
-    if model == "linear":
+def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model_name, patientwise=True):
+    if model_name == "linear":
         print("Plotting posterior/trace plots")
         # Autocorrelation plots: 
         az.plot_autocorr(idata, var_names=["sigma_obs"])
@@ -845,7 +853,7 @@ def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model, patientwise=Tr
         plt.tight_layout()
         plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_beta_pi_r.pdf")
         plt.close()
-    elif model == "BNN":
+    elif model_name == "BNN":
         # Plot weights in_1 rho_s
         az.plot_trace(idata, var_names=('weights_in_rho_s'), combined=False, compact=False)
         plt.tight_layout()
@@ -910,7 +918,7 @@ def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model, patientwise=Tr
         plt.tight_layout()
         plt.savefig(SAVEDIR+name+"-_wts_out_pi_r_combined.pdf", dpi=300)
         plt.close()
-    elif model == "joint_BNN":
+    elif model_name == "joint_BNN":
         # Plot weights in_1
         az.plot_trace(idata, var_names=('weights_in'), combined=False, compact=False)
         plt.tight_layout()
@@ -941,10 +949,6 @@ def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model, patientwise=Tr
         plt.tight_layout()
         plt.savefig(SAVEDIR+name+"-_group_parameters_xi.pdf", dpi=300)
         plt.close()
-    az.plot_trace(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), combined=True)
-    plt.tight_layout()
-    plt.savefig(SAVEDIR+name+"-_individual_parameters.pdf", dpi=300)
-    plt.close()
     # Test of exploration 
     az.plot_energy(idata)
     plt.savefig(SAVEDIR+name+"-plot_energy.pdf", dpi=300)
@@ -953,19 +957,26 @@ def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model, patientwise=Tr
     az.plot_forest(idata, var_names=["alpha"], combined=True, hdi_prob=0.95, r_hat=True)
     plt.savefig(SAVEDIR+name+"-forest_alpha.pdf", dpi=300)
     plt.close()
+    az.plot_forest(idata, var_names=["rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
+    plt.savefig(SAVEDIR+name+"-forest_rho_s.pdf", dpi=300)
+    plt.close()
+    az.plot_forest(idata, var_names=["rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
+    plt.savefig(SAVEDIR+name+"-forest_rho_r.pdf", dpi=300)
+    plt.close()
+    az.plot_forest(idata, var_names=["pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
+    plt.savefig(SAVEDIR+name+"-forest_pi_r.pdf", dpi=300)
+    plt.close()
+    az.plot_forest(idata, var_names=["psi"], combined=True, hdi_prob=0.95, r_hat=True)
+    plt.savefig(SAVEDIR+name+"-forest_psi.pdf", dpi=300)
+    plt.close()
     if patientwise:
-        az.plot_forest(idata, var_names=["theta_rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
-        plt.savefig(SAVEDIR+name+"-forest_theta_rho_s.pdf", dpi=300)
-        plt.close()
-        az.plot_forest(idata, var_names=["theta_rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
-        plt.savefig(SAVEDIR+name+"-forest_theta_rho_r.pdf", dpi=300)
-        plt.close()
-        az.plot_forest(idata, var_names=["theta_pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
-        plt.savefig(SAVEDIR+name+"-forest_theta_pi_r.pdf", dpi=300)
+        az.plot_trace(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), combined=True)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-_individual_parameters.pdf", dpi=300)
         plt.close()
 
 def plot_posterior_CI(args):
-    sample_shape, y_resolution, ii, idata, patient_dictionary, SAVEDIR, name, N_rand_obs_pred_train, model, parameter_dictionary, PLOT_PARAMETERS, CI_with_obs_noise = args
+    sample_shape, y_resolution, ii, idata, patient_dictionary, SAVEDIR, name, N_rand_obs_pred_train, model_name, parameter_dictionary, PLOT_PARAMETERS, CI_with_obs_noise, PLOT_RESISTANT = args
     if not CI_with_obs_noise:
         N_rand_obs_pred_train = 1
     n_chains = sample_shape[0]
@@ -999,11 +1010,12 @@ def plot_posterior_CI(args):
             if CI_with_obs_noise:
                 for rr in range(N_rand_obs_pred_train):
                     noise_array = np.random.normal(0, this_sigma_obs, y_resolution)
-                    predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values_noiseless + noise_array
+                    noisy_observations = predicted_y_values_noiseless + noise_array
+                    predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] = np.array([max(0, value) for value in noisy_observations]) # 0 threshold
                     predicted_y_resistant_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] * (predicted_y_resistant_values_noiseless/(predicted_y_values_noiseless + 1e-15))
             else: 
-                predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values_noiseless + noise_array
-                predicted_y_resistant_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] * (predicted_y_resistant_values_noiseless/(predicted_y_values_noiseless + 1e-15))
+                predicted_y_values[ch, sa] = predicted_y_values_noiseless
+                predicted_y_resistant_values[ch, sa] = predicted_y_values[ch, sa] * (predicted_y_resistant_values_noiseless/(predicted_y_values_noiseless + 1e-15))
     flat_pred_y_values = np.reshape(predicted_y_values, (n_chains*n_samples*N_rand_obs_pred_train,y_resolution))
     sorted_local_pred_y_values = np.sort(flat_pred_y_values, axis=0)
     flat_pred_resistant = np.reshape(predicted_y_resistant_values, (n_chains*n_samples*N_rand_obs_pred_train,y_resolution))
@@ -1013,12 +1025,12 @@ def plot_posterior_CI(args):
         parameters_ii = parameter_dictionary[ii]
     else: 
         parameters_ii = []
-    plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameters_ii, PLOT_PARAMETERS=PLOT_PARAMETERS, PLOT_TREATMENTS=False, plot_title="Posterior CI for training patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant)
+    plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameters_ii, PLOT_PARAMETERS=PLOT_PARAMETERS, PLOT_TREATMENTS=False, plot_title="Posterior CI for training patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant, PLOT_RESISTANT=PLOT_RESISTANT)
     return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
 
 def plot_predictions(args): # Predicts observations of M protein
     #sample_shape, y_resolution, ii = args
-    sample_shape, y_resolution, ii, idata, X_test, patient_dictionary_test, SAVEDIR, name, N_rand_eff_pred, N_rand_obs_pred, model, parameter_dictionary, PLOT_PARAMETERS, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise = args
+    sample_shape, y_resolution, ii, idata, X_test, patient_dictionary_test, SAVEDIR, name, N_rand_eff_pred, N_rand_obs_pred, model_name, parameter_dictionary, PLOT_PARAMETERS, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, PLOT_RESISTANT, PLOT_MEASUREMENTS = args
     if not CI_with_obs_noise:
         N_rand_eff_pred = N_rand_eff_pred * N_rand_obs_pred
         N_rand_obs_pred = 1
@@ -1041,11 +1053,11 @@ def plot_predictions(args): # Predicts observations of M protein
             sigma_obs = np.ravel(idata.posterior['sigma_obs'][ch,sa])
             alpha = np.ravel(idata.posterior['alpha'][ch,sa])
 
-            if model == "linear": 
+            if model_name == "linear": 
                 this_beta_rho_s = np.ravel(idata.posterior['beta_rho_s'][ch,sa])
                 this_beta_rho_r = np.ravel(idata.posterior['beta_rho_r'][ch,sa])
                 this_beta_pi_r = np.ravel(idata.posterior['beta_pi_r'][ch,sa])
-            elif model == "BNN": 
+            elif model_name == "BNN": 
                 # weights 
                 weights_in_rho_s = idata.posterior['weights_in_rho_s'][ch,sa]
                 weights_in_rho_r = idata.posterior['weights_in_rho_r'][ch,sa]
@@ -1073,7 +1085,7 @@ def plot_predictions(args): # Predicts observations of M protein
                 act_out_rho_r = np.dot(act_1_rho_r, weights_out_rho_r)
                 act_out_pi_r =  np.dot(act_1_pi_r,  weights_out_pi_r)
 
-            elif model == "joint_BNN": 
+            elif model_name == "joint_BNN": 
                 # weights 
                 weights_in = idata.posterior['weights_in'][ch,sa]
                 weights_out = idata.posterior['weights_out'][ch,sa]
@@ -1095,7 +1107,7 @@ def plot_predictions(args): # Predicts observations of M protein
             # Random effects 
             omega  = np.ravel(idata.posterior['omega'][ch,sa])
             for ee in range(N_rand_eff_pred):
-                if model == "linear":
+                if model_name == "linear":
                     #if MODEL_RANDOM_EFFECTS: 
                     predicted_theta_1 = np.random.normal(alpha[0] + np.dot(X_test.iloc[ii,:], this_beta_rho_s), omega[0])
                     predicted_theta_2 = np.random.normal(alpha[1] + np.dot(X_test.iloc[ii,:], this_beta_rho_r), omega[1])
@@ -1104,7 +1116,7 @@ def plot_predictions(args): # Predicts observations of M protein
                     #    predicted_theta_1 = alpha[0] + np.dot(X_test.iloc[ii,:], this_beta_rho_s)
                     #    predicted_theta_2 = alpha[1] + np.dot(X_test.iloc[ii,:], this_beta_rho_r)
                     #    predicted_theta_3 = alpha[2] + np.dot(X_test.iloc[ii,:], this_beta_pi_r)
-                elif model == "BNN" or model == "joint_BNN":
+                elif model_name == "BNN" or model_name == "joint_BNN":
                     if MODEL_RANDOM_EFFECTS:
                         predicted_theta_1 = np.random.normal(alpha[0] + act_out_rho_s, omega[0])
                         predicted_theta_2 = np.random.normal(alpha[1] + act_out_rho_r, omega[1])
@@ -1118,11 +1130,6 @@ def plot_predictions(args): # Predicts observations of M protein
                 predicted_rho_r = np.exp(predicted_theta_2)
                 predicted_pi_r  = 1/(1+np.exp(-predicted_theta_3))
 
-                measurement_times = patient.get_measurement_times()
-                treatment_history = patient.get_treatment_history()
-                first_time = min(measurement_times[0], treatment_history[0].start)
-                time_max = find_max_time(measurement_times)
-                plotting_times = np.linspace(first_time, time_max, y_resolution) #int((measurement_times[-1]+1)*10))
                 this_psi = patient.Mprotein_values[0] + np.random.normal(0,sigma_obs)
                 predicted_parameters[ch,sa] = Parameters(Y_0=this_psi, pi_r=predicted_pi_r, g_r=predicted_rho_r, g_s=predicted_rho_s, k_1=0, sigma=sigma_obs)
                 these_parameters = predicted_parameters[ch,sa]
@@ -1134,7 +1141,8 @@ def plot_predictions(args): # Predicts observations of M protein
                 if CI_with_obs_noise:
                     for rr in range(N_rand_obs_pred):
                         noise_array = np.random.normal(0, sigma_obs, y_resolution)
-                        predicted_y_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] = predicted_y_values_noiseless + noise_array
+                        noisy_observations = predicted_y_values_noiseless + noise_array
+                        predicted_y_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] = np.array([max(0, value) for value in noisy_observations]) # 0 threshold
                         predicted_y_resistant_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] = predicted_y_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] * (predicted_y_resistant_values_noiseless/(predicted_y_values_noiseless + 1e-15))
                 else: 
                     predicted_y_values[N_rand_eff_pred*ch + ee, N_rand_obs_pred*sa + rr] = predicted_y_values_noiseless
@@ -1148,10 +1156,10 @@ def plot_predictions(args): # Predicts observations of M protein
         parameters_ii = parameter_dictionary[ii]
     else:
         parameters_ii = []
-    plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameters_ii, PLOT_PARAMETERS=PLOT_PARAMETERS, plot_title="Posterior predictive CI for test patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant, PLOT_MEASUREMENTS = False)
+    plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameters_ii, PLOT_PARAMETERS=PLOT_PARAMETERS, plot_title="Posterior predictive CI for test patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant, PLOT_MEASUREMENTS = PLOT_MEASUREMENTS, PLOT_RESISTANT=PLOT_RESISTANT)
     return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
 
-def plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_test, X_test, SAVEDIR, name, y_resolution, model, parameter_dictionary, PLOT_PARAMETERS, parameter_dictionary_test, PLOT_PARAMETERS_test, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise=True):
+def plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_test, X_test, SAVEDIR, name, y_resolution, model_name, parameter_dictionary, PLOT_PARAMETERS, parameter_dictionary_test, PLOT_PARAMETERS_test, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise=True, PARALLELLIZE=True, PLOT_RESISTANT=True, PLOT_MEASUREMENTS_test=False):
     sample_shape = idata.posterior['psi'].shape # [chain, n_samples, dim]
     N_chains = sample_shape[0]
     N_samples = sample_shape[1]
@@ -1168,13 +1176,17 @@ def plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_te
         N_rand_obs_pred_train = 10 # Number of observation noise samples to draw for each parameter sample
     print("Plotting posterior credible bands for training cases")
     N_patients = len(patient_dictionary)
-    args = [(sample_shape, y_resolution, ii, idata, patient_dictionary, SAVEDIR, name, N_rand_obs_pred_train, model, parameter_dictionary, PLOT_PARAMETERS, CI_with_obs_noise) for ii in range(min(N_patients, 20))]
-    if SAVEDIR in ["./plots/Bayesian_estimates_simdata_linearmodel/", "./plots/Bayesian_estimates_simdata_BNN/", "./plots/Bayesian_estimates_simdata_joint_BNN/"]:
-        poolworkers = 15
-    else:
-        poolworkers = 4 
-    with Pool(poolworkers) as pool:
-        results = pool.map(plot_posterior_CI,args)
+    args = [(sample_shape, y_resolution, ii, idata, patient_dictionary, SAVEDIR, name, N_rand_obs_pred_train, model_name, parameter_dictionary, PLOT_PARAMETERS, CI_with_obs_noise, PLOT_RESISTANT) for ii in range(min(N_patients, 20))]
+    if PARALLELLIZE:
+        if SAVEDIR in ["./plots/Bayesian_estimates_simdata_linearmodel/", "./plots/Bayesian_estimates_simdata_BNN/", "./plots/Bayesian_estimates_simdata_joint_BNN/"]:
+            poolworkers = 15
+        else:
+            poolworkers = 4 
+        with Pool(poolworkers) as pool:
+            results = pool.map(plot_posterior_CI,args)
+    else: 
+        for elem in args:
+            plot_posterior_CI(elem)
     print("...done.")
 
     # Posterior predictive CI for test data
@@ -1192,11 +1204,47 @@ def plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_te
         N_rand_obs_pred = 10 # Number of observation noise samples to draw for each parameter sample 
     print("Plotting predictive credible bands for test cases")
     N_patients_test = len(patient_dictionary_test)
-    args = [(sample_shape, y_resolution, ii, idata, X_test, patient_dictionary_test, SAVEDIR, name, N_rand_eff_pred, N_rand_obs_pred, model, parameter_dictionary_test, PLOT_PARAMETERS_test, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise) for ii in range(N_patients_test)]
-    with Pool(poolworkers) as pool:
-        results = pool.map(plot_predictions,args)
+    args = [(sample_shape, y_resolution, ii, idata, X_test, patient_dictionary_test, SAVEDIR, name, N_rand_eff_pred, N_rand_obs_pred, model_name, parameter_dictionary_test, PLOT_PARAMETERS_test, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, PLOT_RESISTANT, PLOT_MEASUREMENTS_test) for ii in range(N_patients_test)]
+    if PARALLELLIZE:
+        with Pool(poolworkers) as pool:
+            results = pool.map(plot_predictions,args)
+    else: 
+        for elem in args:
+            plot_predictions(elem)
     print("...done.")
 
+def plot_parameter_dependency_on_covariates(SAVEDIR, name, X, expected_theta_1, true_theta_rho_s, true_rho_s):
+    color_array = X["Covariate 2"].to_numpy()
+
+    fig, ax = plt.subplots()
+    ax.set_title("expected_theta_1 depends on covariates 1 and 2")
+    points = ax.scatter(X["Covariate 1"], expected_theta_1, c=color_array, cmap="plasma")
+    ax.set_xlabel("covariate 1")
+    ax.set_ylabel("expected_theta_1")
+    cbar = fig.colorbar(points)
+    cbar.set_label('covariate 2', rotation=90)
+    plt.savefig(SAVEDIR+"effects_1_"+name+".pdf", dpi=300)
+    plt.close()
+
+    fig, ax = plt.subplots()
+    ax.set_title("true_theta_rho_s depends on covariates 1 and 2")
+    points = ax.scatter(X["Covariate 1"], true_theta_rho_s, c=color_array, cmap="plasma")
+    ax.set_xlabel("covariate 1")
+    ax.set_ylabel("true_theta_rho_s")
+    cbar = fig.colorbar(points)
+    cbar.set_label('covariate 2', rotation=90)
+    plt.savefig(SAVEDIR+"effects_2_"+name+".pdf", dpi=300)
+    plt.close()
+
+    fig, ax = plt.subplots()
+    ax.set_title("true_rho_s depends on covariates 1 and 2")
+    points = ax.scatter(X["Covariate 1"], true_rho_s, c=color_array, cmap="plasma")
+    ax.set_xlabel("covariate 1")
+    ax.set_ylabel("true_rho_s")
+    cbar = fig.colorbar(points)
+    cbar.set_label('covariate 2', rotation=90)
+    plt.savefig(SAVEDIR+"effects_3_"+name+".pdf", dpi=300)
+    plt.close()
 
 #####################################
 # Inference
@@ -1383,15 +1431,15 @@ def get_binary_outcome(period_start, patient, this_estimate, days_for_considerat
 # Posterior evaluation
 #####################################
 # Convergence checks
-def quasi_geweke_test(idata, model, first=0.1, last=0.5, intervals=20):
+def quasi_geweke_test(idata, model_name, first=0.1, last=0.5, intervals=20):
     if first+last > 1:
         print("Overriding input since first+last>1. New first, last = 0.1, 0.5")
         first, last = 0.1, 0.5
     print("Running Geweke test...")
     convergence_flag = True
-    if model == "linear":
+    if model_name == "linear":
         var_names = ['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r']
-    elif model == "BNN":
+    elif model_name == "BNN":
         var_names = ['alpha', 'omega', 'theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r']
     for var_name in var_names:
         sample_shape = idata.posterior[var_name].shape

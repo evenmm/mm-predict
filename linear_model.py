@@ -18,63 +18,18 @@ def linear_model(X, patient_dictionary, name, N_samples=3000, N_tuning=3000, tar
         for jj in range(len(mprot)):
             single_entry = pd.DataFrame({"patient_id":[ii], "mprotein_value":[mprot[jj]], "time":[times[jj]]})
             df = pd.concat([df, single_entry], ignore_index=True)
-    print(df.head(n=6))
-
-    # Experimental:
     group_id = df["patient_id"].tolist()
-    Y_flat_no_nans = df["mprotein_value"].tolist()
-    t_flat_no_nans = df["time"].tolist()
-
-    ## patient_id_list
-    #df['group'] = pd.Categorical(df['patient_id'], ordered = False)
-    #group_id = df['group'].cat.codes.values # This one could contain more than just 0 to N, it can be separate for train and test 
-    #print(group_id)
+    Y_flat_no_nans = np.array(df["mprotein_value"].tolist())
+    t_flat_no_nans = np.array(df["time"].tolist())
 
     N_patients, P = X.shape
     P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
     X_not_transformed = X.copy()
     X = X.T
-    """
-    #Y = np.transpose(np.array([patient.Mprotein_values for _, patient in patient_dictionary.items()]))
-    #t = np.transpose(np.array([patient.measurement_times for _, patient in patient_dictionary.items()]))
-    Y = np.empty((N_patients, max([len(patient.Mprotein_values) for _, patient in patient_dictionary.items()])))
-    Y[:] = np.nan 
-    #for ii, mprot in enumerate([patient.Mprotein_values for _, patient in patient_dictionary.items()]):
-    for ii in range(N_patients):
-        mprot = patient_dictionary[ii].Mprotein_values
-        Y[ii,0:len(mprot)] = mprot
-    Y = np.transpose(Y)
-    t = np.empty((N_patients, max([len(patient.measurement_times) for _, patient in patient_dictionary.items()])))
-    t[:] = np.nan 
-    #for ii, mtimes in enumerate([patient.measurement_times for _, patient in patient_dictionary.items()]):
-    for ii in range(N_patients):
-        mtimes = patient_dictionary[ii].measurement_times
-        t[ii,0:len(mtimes)] = mtimes
-    t = np.transpose(t)
-    #assert t.shape == Y.shape
-    """
-    #yi0 = np.maximum(1e-5, np.array([patient.Mprotein_values[0] for _, patient in patient_dictionary.items()]))
     yi0 = np.zeros(N_patients)
     for ii in range(N_patients):
         yi0[ii] = patient_dictionary[ii].Mprotein_values[0]
 
-    #print("Max(Y):", np.amax(Y))
-    #print("Max(t):", np.amax(t))
-    #viz_Y = Y[Y<250]
-    #plt.figure()
-    #sns.distplot(Y, hist=True, kde=True, 
-    #         bins=int(180/5), color = 'darkblue', 
-    #         hist_kws={'edgecolor':'black'},
-    #         kde_kws={'linewidth': 1, 'gridsize':100})
-    #plt.savefig("./plots/posterior_plots/"+name+"-plot_density.png")
-    #plt.close
-    #plt.figure()
-    #sns.distplot(viz_Y, hist=True, kde=True, 
-    #         bins=int(180/5), color = 'darkblue', 
-    #         hist_kws={'edgecolor':'black'},
-    #         kde_kws={'linewidth': 1, 'gridsize':100})
-    #plt.savefig("./plots/posterior_plots/"+name+"-plot_density_lessthan_250.png")
-    #plt.close
     if psi_prior not in ["lognormal", "normal"]:
         print("Unknown prior option specified for psi; Using 'lognormal' prior")
         psi_prior = "lognormal"
@@ -137,33 +92,8 @@ def linear_model(X, patient_dictionary, name, N_samples=3000, N_tuning=3000, tar
         rho_r = pm.Deterministic("rho_r", np.exp(theta_rho_r))
         pi_r  = pm.Deterministic("pi_r", 1/(1+np.exp(-theta_pi_r)))
 
-        # Observation model 
-        #t_no_nans = t[~np.isnan(t)]
-        
-        ##mu_Y = []
-        ##for ii in range(N_patients):
-        ##    times = patient_dictionary[ii].measurement_times
-        ##    nonzero_Y = psi[ii] * (pi_r[ii]*np.exp(rho_r[ii]*times) + (1-pi_r[ii])*np.exp(rho_s[ii]*times))
-        ##    mu_Y.append(nonzero_Y)
-        ##mu_Y = np.array(mu_Y).flatten()
-        #
-        #mu_Y = [] # is a list of 
-        #for ii in range(N_patients):
-        #    times = patient_dictionary[ii].measurement_times
-        #    for tt in times:
-        #        nonzero_Y = psi[ii] * (pi_r[ii]*np.exp(rho_r[ii]*tt) + (1-pi_r)*np.exp(rho_s[ii]*tt))
-        #        mu_Y.append(nonzero_Y)
-        ##mu_Y = np.array(mu_Y)
-
-        #t_flat_no_nans = t[~np.isnan(t)]
         mu_Y = psi[group_id] * (pi_r[group_id]*np.exp(rho_r[group_id]*t_flat_no_nans) + (1-pi_r[group_id])*np.exp(rho_s[group_id]*t_flat_no_nans))
-        Y_obs = pm.Normal("Y_obs", mu=mu_Y, sigma=sigma_obs, observed=Y_flat_no_nans)
-
-        #mu_Y = psi * (pi_r*np.exp(rho_r*t) + (1-pi_r)*np.exp(rho_s*t))
-        #mu_Y = mu_Y[~np.isnan(t)] #this must be done in pymc style 
 
         # Likelihood (sampling distribution) of observations
-        #print(Y[~np.isnan(t)])
-        #print(np.isnan(Y[~np.isnan(t)]).any())
-        #Y_obs = pm.Normal("Y_obs", mu=mu_Y, sigma=sigma_obs, observed=Y[~np.isnan(t)])
+        Y_obs = pm.Normal("Y_obs", mu=mu_Y, sigma=sigma_obs, observed=Y_flat_no_nans)
     return linear_model
