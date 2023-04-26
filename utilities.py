@@ -834,7 +834,7 @@ def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model_name, patientwi
 
         az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma_obs'), combined=True)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_group_parameters.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_group_parameters.pdf")
         plt.close()
 
         az.plot_trace(idata, var_names=('beta_rho_s'), lines=[('beta_rho_s', {}, [0])], combined=False, compact=False)
@@ -853,126 +853,139 @@ def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model_name, patientwi
         plt.tight_layout()
         plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_beta_pi_r.pdf")
         plt.close()
+
+        az.plot_forest(idata, var_names=["beta_rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-forest_beta_rho_r.pdf")
+        plt.close()
+        az.plot_forest(idata, var_names=["pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
+        plt.savefig(SAVEDIR+name+"-forest_pi_r.pdf")
+        plt.tight_layout()
+        plt.close()
+        az.plot_forest(idata, var_names=["beta_rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR+name+"-forest_beta_rho_s.pdf")
+        plt.close()
     elif model_name == "BNN":
         # Plot weights in_1 rho_s
         az.plot_trace(idata, var_names=('weights_in_rho_s'), combined=False, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_s.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_s.pdf")
         plt.close()
         # Plot weights in_1 rho_r
         az.plot_trace(idata, var_names=('weights_in_rho_r'), combined=False, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_r.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_r.pdf")
         plt.close()
         # Plot weights in_1 pi_r
         az.plot_trace(idata, var_names=('weights_in_pi_r'), combined=False, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_in_1_pi_r.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_pi_r.pdf")
         plt.close()
 
         # Plot weights 2_out rho_s
         az.plot_trace(idata, var_names=('weights_out_rho_s'), combined=False, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_out_rho_s.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_out_rho_s.pdf")
         plt.close()
         # Plot weights 2_out rho_r
         az.plot_trace(idata, var_names=('weights_out_rho_r'), combined=False, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_out_rho_r.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_out_rho_r.pdf")
         plt.close()
         # Plot weights 2_out pi_r
         az.plot_trace(idata, var_names=('weights_out_pi_r'), combined=False, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_out_pi_r.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_out_pi_r.pdf")
         plt.close()
 
         # Combined means combined chains
         # Plot weights in_1 rho_s
         az.plot_trace(idata, var_names=('weights_in_rho_s'), combined=True, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_s_combined.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_s_combined.pdf")
         plt.close()
         # Plot weights in_1 rho_r
         az.plot_trace(idata, var_names=('weights_in_rho_r'), combined=True, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_r_combined.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_rho_r_combined.pdf")
         plt.close()
         # Plot weights in_1 pi_r
         az.plot_trace(idata, var_names=('weights_in_pi_r'), combined=True, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_in_1_pi_r_combined.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_pi_r_combined.pdf")
         plt.close()
 
         # Plot weights 2_out rho_s
         az.plot_trace(idata, var_names=('weights_out_rho_s'), combined=True, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_out_rho_s_combined.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_out_rho_s_combined.pdf")
         plt.close()
         # Plot weights 2_out rho_r
         az.plot_trace(idata, var_names=('weights_out_rho_r'), combined=True, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_out_rho_r_combined.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_out_rho_r_combined.pdf")
         plt.close()
         # Plot weights 2_out pi_r
         az.plot_trace(idata, var_names=('weights_out_pi_r'), combined=True, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_out_pi_r_combined.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_out_pi_r_combined.pdf")
         plt.close()
     elif model_name == "joint_BNN":
         # Plot weights in_1
         az.plot_trace(idata, var_names=('weights_in'), combined=False, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_in_1.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_in_1.pdf")
         plt.close()
 
         # Plot weights 2_out
         az.plot_trace(idata, var_names=('weights_out'), combined=False, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_out.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_out.pdf")
         plt.close()
 
         # Combined means combined chains
         # Plot weights in_1
         az.plot_trace(idata, var_names=('weights_in'), combined=True, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_in_1_combined.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_in_1_combined.pdf")
         plt.close()
 
         # Plot weights 2_out
         az.plot_trace(idata, var_names=('weights_out'), combined=True, compact=False)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_wts_out_combined.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_wts_out_combined.pdf")
         plt.close()
 
     if psi_prior=="lognormal":
         az.plot_trace(idata, var_names=('xi'), combined=True)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_group_parameters_xi.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_group_parameters_xi.pdf")
         plt.close()
     # Test of exploration 
     az.plot_energy(idata)
-    plt.savefig(SAVEDIR+name+"-plot_energy.pdf", dpi=300)
+    plt.savefig(SAVEDIR+name+"-plot_energy.pdf")
     plt.close()
     # Plot of coefficients
     az.plot_forest(idata, var_names=["alpha"], combined=True, hdi_prob=0.95, r_hat=True)
-    plt.savefig(SAVEDIR+name+"-forest_alpha.pdf", dpi=300)
+    plt.savefig(SAVEDIR+name+"-forest_alpha.pdf")
     plt.close()
     az.plot_forest(idata, var_names=["rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
-    plt.savefig(SAVEDIR+name+"-forest_rho_s.pdf", dpi=300)
+    plt.savefig(SAVEDIR+name+"-forest_rho_s.pdf")
     plt.close()
     az.plot_forest(idata, var_names=["rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
-    plt.savefig(SAVEDIR+name+"-forest_rho_r.pdf", dpi=300)
+    plt.savefig(SAVEDIR+name+"-forest_rho_r.pdf")
     plt.close()
     az.plot_forest(idata, var_names=["pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
-    plt.savefig(SAVEDIR+name+"-forest_pi_r.pdf", dpi=300)
+    plt.savefig(SAVEDIR+name+"-forest_pi_r.pdf")
     plt.close()
     az.plot_forest(idata, var_names=["psi"], combined=True, hdi_prob=0.95, r_hat=True)
-    plt.savefig(SAVEDIR+name+"-forest_psi.pdf", dpi=300)
+    plt.savefig(SAVEDIR+name+"-forest_psi.pdf")
     plt.close()
     if patientwise:
         az.plot_trace(idata, var_names=('theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r'), combined=True)
         plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_individual_parameters.pdf", dpi=300)
+        plt.savefig(SAVEDIR+name+"-_individual_parameters.pdf")
         plt.close()
 
 def plot_posterior_CI(args):
@@ -1158,6 +1171,192 @@ def plot_predictions(args): # Predicts observations of M protein
         parameters_ii = []
     plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameters_ii, PLOT_PARAMETERS=PLOT_PARAMETERS, plot_title="Posterior predictive CI for test patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant, PLOT_MEASUREMENTS = PLOT_MEASUREMENTS, PLOT_RESISTANT=PLOT_RESISTANT)
     return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
+
+def predict_PFS(args): # Predicts observations of M protein
+    sample_shape, ii, idata, X_test, patient_dictionary_test, N_rand_eff_pred, N_rand_obs_pred, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, evaluation_time = args
+    if not CI_with_obs_noise:
+        N_rand_eff_pred = N_rand_eff_pred * N_rand_obs_pred
+        N_rand_obs_pred = 1
+    n_chains = sample_shape[0]
+    n_samples = sample_shape[1]
+    var_dimensions = sample_shape[2] # one per patient
+    np.random.seed(ii) # Seeding the randomness in observation noise sigma, in random effects and in psi = yi0 + random(sigma)
+
+    patient = patient_dictionary_test[ii]
+    measurement_times = patient.get_measurement_times() 
+    Mprotein_values = patient.get_Mprotein_values()
+    treatment_history = patient.get_treatment_history()
+    first_time = min(measurement_times[0], treatment_history[0].start)
+    max_time = find_max_time(measurement_times)
+    #test_times = np.array([30, 60, 90, 120, 150, 180])
+    test_times = np.array([evaluation_time])
+    y_resolution = len(test_times)
+    predicted_parameters = np.empty(shape=(n_chains, n_samples), dtype=object)
+    all_predicted_y_values_noiseless = np.empty(shape=(n_chains*N_rand_eff_pred, n_samples, y_resolution))
+    for ch in range(n_chains):
+        for sa in range(n_samples):
+            sigma_obs = np.ravel(idata.posterior['sigma_obs'][ch,sa])
+            alpha = np.ravel(idata.posterior['alpha'][ch,sa])
+
+            if model_name == "linear": 
+                this_beta_rho_s = np.ravel(idata.posterior['beta_rho_s'][ch,sa])
+                this_beta_rho_r = np.ravel(idata.posterior['beta_rho_r'][ch,sa])
+                this_beta_pi_r = np.ravel(idata.posterior['beta_pi_r'][ch,sa])
+            elif model_name == "BNN": 
+                # weights 
+                weights_in_rho_s = idata.posterior['weights_in_rho_s'][ch,sa]
+                weights_in_rho_r = idata.posterior['weights_in_rho_r'][ch,sa]
+                weights_in_pi_r = idata.posterior['weights_in_pi_r'][ch,sa]
+                weights_out_rho_s = idata.posterior['weights_out_rho_s'][ch,sa]
+                weights_out_rho_r = idata.posterior['weights_out_rho_r'][ch,sa]
+                weights_out_pi_r = idata.posterior['weights_out_pi_r'][ch,sa]
+
+                # intercepts
+                #sigma_bias_in = idata.posterior['sigma_bias_in'][ch,sa]
+                bias_in_rho_s = np.ravel(idata.posterior['bias_in_rho_s'][ch,sa])
+                bias_in_rho_r = np.ravel(idata.posterior['bias_in_rho_r'][ch,sa])
+                bias_in_pi_r = np.ravel(idata.posterior['bias_in_pi_r'][ch,sa])
+
+                pre_act_1_rho_s = np.dot(X_test.iloc[ii,:], weights_in_rho_s) + bias_in_rho_s
+                pre_act_1_rho_r = np.dot(X_test.iloc[ii,:], weights_in_rho_r) + bias_in_rho_r
+                pre_act_1_pi_r  = np.dot(X_test.iloc[ii,:], weights_in_pi_r)  + bias_in_pi_r
+
+                act_1_rho_s = np.select([pre_act_1_rho_s > 0, pre_act_1_rho_s <= 0], [pre_act_1_rho_s, pre_act_1_rho_s*0.01], 0)
+                act_1_rho_r = np.select([pre_act_1_rho_r > 0, pre_act_1_rho_r <= 0], [pre_act_1_rho_r, pre_act_1_rho_r*0.01], 0)
+                act_1_pi_r =  np.select([pre_act_1_pi_r  > 0, pre_act_1_pi_r  <= 0], [pre_act_1_pi_r,  pre_act_1_pi_r*0.01],  0)
+
+                # Output
+                act_out_rho_s = np.dot(act_1_rho_s, weights_out_rho_s)
+                act_out_rho_r = np.dot(act_1_rho_r, weights_out_rho_r)
+                act_out_pi_r =  np.dot(act_1_pi_r,  weights_out_pi_r)
+
+            elif model_name == "joint_BNN": 
+                # weights 
+                weights_in = idata.posterior['weights_in'][ch,sa]
+                weights_out = idata.posterior['weights_out'][ch,sa]
+
+                # intercepts
+                #sigma_bias_in = idata.posterior['sigma_bias_in'][ch,sa]
+                bias_in = np.ravel(idata.posterior['bias_in'][ch,sa])
+
+                pre_act_1 = np.dot(X_test.iloc[ii,:], weights_in) + bias_in
+
+                act_1 = np.select([pre_act_1 > 0, pre_act_1 <= 0], [pre_act_1, pre_act_1*0.01], 0)
+
+                # Output
+                act_out = np.dot(act_1, weights_out)
+                act_out_rho_s = act_out[0]
+                act_out_rho_r = act_out[1]
+                act_out_pi_r =  act_out[2]
+
+            # Random effects 
+            omega  = np.ravel(idata.posterior['omega'][ch,sa])
+            for ee in range(N_rand_eff_pred):
+                if model_name == "linear":
+                    #if MODEL_RANDOM_EFFECTS: 
+                    predicted_theta_1 = np.random.normal(alpha[0] + np.dot(X_test.iloc[ii,:], this_beta_rho_s), omega[0])
+                    predicted_theta_2 = np.random.normal(alpha[1] + np.dot(X_test.iloc[ii,:], this_beta_rho_r), omega[1])
+                    predicted_theta_3 = np.random.normal(alpha[2] + np.dot(X_test.iloc[ii,:], this_beta_pi_r), omega[2])
+                    #else: 
+                    #    predicted_theta_1 = alpha[0] + np.dot(X_test.iloc[ii,:], this_beta_rho_s)
+                    #    predicted_theta_2 = alpha[1] + np.dot(X_test.iloc[ii,:], this_beta_rho_r)
+                    #    predicted_theta_3 = alpha[2] + np.dot(X_test.iloc[ii,:], this_beta_pi_r)
+                elif model_name == "BNN" or model_name == "joint_BNN":
+                    if MODEL_RANDOM_EFFECTS:
+                        predicted_theta_1 = np.random.normal(alpha[0] + act_out_rho_s, omega[0])
+                        predicted_theta_2 = np.random.normal(alpha[1] + act_out_rho_r, omega[1])
+                        predicted_theta_3 = np.random.normal(alpha[2] + act_out_pi_r, omega[2])
+                    else: 
+                        predicted_theta_1 = alpha[0] + act_out_rho_s
+                        predicted_theta_2 = alpha[1] + act_out_rho_r
+                        predicted_theta_3 = alpha[2] + act_out_pi_r
+
+                predicted_rho_s = - np.exp(predicted_theta_1)
+                predicted_rho_r = np.exp(predicted_theta_2)
+                predicted_pi_r  = 1/(1+np.exp(-predicted_theta_3))
+
+                this_psi = patient.Mprotein_values[0] + np.random.normal(0,sigma_obs)
+                predicted_parameters[ch,sa] = Parameters(Y_0=this_psi, pi_r=predicted_pi_r, g_r=predicted_rho_r, g_s=predicted_rho_s, k_1=0, sigma=sigma_obs)
+                these_parameters = predicted_parameters[ch,sa]
+                # Predicted total and resistant M protein
+                predicted_y_values_noiseless = measure_Mprotein_noiseless(these_parameters, test_times, treatment_history)
+                all_predicted_y_values_noiseless[N_rand_eff_pred*ch + ee, sa] = predicted_y_values_noiseless
+    flat_pred_y_values_noiseless = np.reshape(all_predicted_y_values_noiseless, (n_chains*n_samples*N_rand_eff_pred, y_resolution))
+    ## PFS prediction
+    #pfs_indices = np.empty(n_chains*n_samples*N_rand_eff_pred)
+    ## For each sample get first index after 0 where the predicted M protein is greater than first value. Index is then that + 1
+    #for kk in range(n_chains*n_samples*N_rand_eff_pred):
+    #    index_array = np.where(flat_pred_y_values_noiseless[kk,1:] > flat_pred_y_values_noiseless[kk,0])[0]
+    #    if len(index_array) < 1: 
+    #        pfs_indices[kk] = -1
+    #    else: 
+    #        pfs_indices[kk] = index_array[0] + 1
+    #predicted_PFS = [test_times[int(kk)] for kk in pfs_indices]
+    ## Posterior median is the PFS prediction: 
+    #point_predicted_PFS = np.median(predicted_PFS)
+
+    # Predicted probability of recurrence
+    # at 6 months = 180 days
+    predicted_at_x_months = flat_pred_y_values_noiseless[:,-1]
+    # The proportion of samples at that day that is above the first observed M protein value 
+    p_recurrence = len(predicted_at_x_months[predicted_at_x_months > Mprotein_values[0]]) / len(predicted_at_x_months)
+    return p_recurrence #predicted_PFS, point_predicted_PFS
+
+def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_test, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, SAVEDIR, name):
+    import sklearn.metrics as metrics
+    N_patients_test = len(patient_dictionary_test)
+
+    recurrence_or_not = np.zeros(N_patients_test)
+    for ii in range(N_patients_test):
+        patient = patient_dictionary_test[ii]
+        mprot = patient.Mprotein_values
+        times = patient.measurement_times
+        recurrence_or_not[ii] = int( (mprot[1:][times[1:] < evaluation_time] > mprot[0]).any() )
+    print("Recurrence", recurrence_or_not)
+    print("Proportion with recurrence:", np.mean(recurrence_or_not))
+
+    sample_shape = idata.posterior['psi'].shape # [chain, n_samples, dim]
+    N_samples = sample_shape[1]
+    # Posterior predictive CI for test data
+    if N_samples <= 10:
+        N_rand_eff_pred = 100 # Number of random intercept samples to draw for each idata sample when we make predictions
+        N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
+    elif N_samples <= 100:
+        N_rand_eff_pred = 10 # Number of random intercept samples to draw for each idata sample when we make predictions
+        N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
+    elif N_samples <= 1000:
+        N_rand_eff_pred = 1 # Number of random intercept samples to draw for each idata sample when we make predictions
+        N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
+    else:
+        N_rand_eff_pred = 1 # Number of random intercept samples to draw for each idata sample when we make predictions
+        N_rand_obs_pred = 10 # Number of observation noise samples to draw for each parameter sample 
+
+    args = [(sample_shape, ii, idata, X_test, patient_dictionary_test, N_rand_eff_pred, N_rand_obs_pred, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, evaluation_time) for ii in range(N_patients_test)]
+
+    p_recurrence = np.zeros(N_patients_test) 
+    for ii, elem in enumerate(args):
+        p_recurrence[ii] = predict_PFS(elem)
+
+    # calculate the fpr and tpr for all thresholds of the classification
+    fpr, tpr, threshold = metrics.roc_curve(recurrence_or_not, p_recurrence) #(y_test, preds)
+    roc_auc = metrics.auc(fpr, tpr)
+
+    print("fpr:\n", fpr)
+    print("tpr:\n", tpr)
+    print("threshold:\n", threshold)
+    print("roc_auc:", roc_auc)
+
+    plt.title('Receiver Operating Characteristic')
+    plt.plot(fpr, tpr, 'b', label = 'AUC = %0.2f' % roc_auc)
+    plt.legend(loc = 'lower right')
+    plt.plot([0, 1], [0, 1],'r--')
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+    plt.ylabel('True Positive Rate')
+    plt.xlabel('False Positive Rate')
+    plt.savefig(SAVEDIR+"AUC_"+str(N_patients_test)+"_test_patients_"+name+".pdf")
+    #plt.show()
+    plt.close()
 
 def plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_test, X_test, SAVEDIR, name, y_resolution, model_name, parameter_dictionary, PLOT_PARAMETERS, parameter_dictionary_test, PLOT_PARAMETERS_test, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise=True, PARALLELLIZE=True, PLOT_RESISTANT=True, PLOT_MEASUREMENTS_test=False):
     sample_shape = idata.posterior['psi'].shape # [chain, n_samples, dim]
