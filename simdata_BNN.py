@@ -7,7 +7,8 @@ np.random.seed(RANDOM_SEED)
 rng = np.random.default_rng(RANDOM_SEED)
 print(f"Running on PyMC v{pm.__version__}")
 #SAVEDIR = "/data/evenmm/plots/"
-SAVEDIR = "./plots/Bayesian_estimates_simdata_BNN/"
+#SAVEDIR = "./plots/Bayesian_estimates_simdata_BNN/"
+SAVEDIR = "./"
 
 script_index = int(sys.argv[1]) 
 
@@ -65,13 +66,13 @@ neural_net_model = BNN_model(X, patient_dictionary, name, psi_prior=psi_prior, M
 with neural_net_model:
     if ADADELTA: 
         print("------------------- ADADELTA INITIALIZATION -------------------")
-        advi_iterations = 50_000
+        advi_iterations = 100_000
         advi = pm.ADVI()
         tracker = pm.callbacks.Tracker(
             mean=advi.approx.mean.eval,  # callable that returns mean
             std=advi.approx.std.eval,  # callable that returns std
         )
-        approx = advi.fit(advi_iterations, obj_optimizer=pm.adadelta(), obj_n_mc=5, callbacks=[tracker])
+        approx = advi.fit(advi_iterations, obj_optimizer=pm.adadelta(), obj_n_mc=50, callbacks=[tracker])
         #approx = advi.fit(advi_iterations, obj_optimizer=pm.adagrad(), obj_n_mc=5, callbacks=[tracker])
 
         # Plot ELBO and trace
@@ -120,5 +121,8 @@ print("Done generating test patients")
 plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_test, X_test, SAVEDIR, name, y_resolution, model_name=model_name, parameter_dictionary=parameter_dictionary, PLOT_PARAMETERS=True, parameter_dictionary_test=parameter_dictionary_test, PLOT_PARAMETERS_test=True, PLOT_TREATMENTS=False, MODEL_RANDOM_EFFECTS=MODEL_RANDOM_EFFECTS, CI_with_obs_noise=CI_with_obs_noise, PLOT_RESISTANT=True)
 print("Finished!")
 
-evaluation_time = 1000 # days
+# At how many days to we want to classify people into recurrence / not recurrence: 
+# Here we make sure that all patients have observations at that time by taking the latest time where every patient has an observation
+evaluation_time = measurement_times[:3][-1] + 1
+print(evaluation_time)
 pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_test, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, SAVEDIR, name)

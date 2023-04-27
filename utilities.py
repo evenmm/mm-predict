@@ -1303,7 +1303,6 @@ def predict_PFS(args): # Predicts observations of M protein
     return p_recurrence #predicted_PFS, point_predicted_PFS
 
 def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_test, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, SAVEDIR, name):
-    import sklearn.metrics as metrics
     N_patients_test = len(patient_dictionary_test)
 
     recurrence_or_not = np.zeros(N_patients_test)
@@ -1318,10 +1317,7 @@ def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_
     sample_shape = idata.posterior['psi'].shape # [chain, n_samples, dim]
     N_samples = sample_shape[1]
     # Posterior predictive CI for test data
-    if N_samples <= 10:
-        N_rand_eff_pred = 100 # Number of random intercept samples to draw for each idata sample when we make predictions
-        N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
-    elif N_samples <= 100:
+    if N_samples <= 100:
         N_rand_eff_pred = 10 # Number of random intercept samples to draw for each idata sample when we make predictions
         N_rand_obs_pred = 100 # Number of observation noise samples to draw for each parameter sample 
     elif N_samples <= 1000:
@@ -1336,8 +1332,22 @@ def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_
     p_recurrence = np.zeros(N_patients_test) 
     for ii, elem in enumerate(args):
         p_recurrence[ii] = predict_PFS(elem)
+    
+    print("recurrence_or_not", recurrence_or_not)
+    print("p_recurrence", p_recurrence)
 
+    picklefile = open(SAVEDIR+name+'_recurrence_or_not', 'wb')
+    pickle.dump(recurrence_or_not, picklefile)
+    picklefile.close()
+
+    picklefile = open(SAVEDIR+name+'_p_recurrence', 'wb')
+    pickle.dump(p_recurrence, picklefile)
+    picklefile.close()
+
+    """
+    # Commented out only because med-biostat2 does not have sklearn 
     # calculate the fpr and tpr for all thresholds of the classification
+    import sklearn.metrics as metrics
     fpr, tpr, threshold = metrics.roc_curve(recurrence_or_not, p_recurrence) #(y_test, preds)
     roc_auc = metrics.auc(fpr, tpr)
 
@@ -1357,6 +1367,7 @@ def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_
     plt.savefig(SAVEDIR+"AUC_"+str(N_patients_test)+"_test_patients_"+name+".pdf")
     #plt.show()
     plt.close()
+    """
 
 def plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_test, X_test, SAVEDIR, name, y_resolution, model_name, parameter_dictionary, PLOT_PARAMETERS, parameter_dictionary_test, PLOT_PARAMETERS_test, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise=True, PARALLELLIZE=True, PLOT_RESISTANT=True, PLOT_MEASUREMENTS_test=False):
     sample_shape = idata.posterior['psi'].shape # [chain, n_samples, dim]
