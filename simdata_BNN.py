@@ -1,14 +1,15 @@
 from utilities import *
 from BNN_model import *
+from partial_BNN_model import *
 
 # Initialize random number generator
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
 rng = np.random.default_rng(RANDOM_SEED)
 print(f"Running on PyMC v{pm.__version__}")
-#SAVEDIR = "/data/evenmm/plots/"
+SAVEDIR = "/data/evenmm/plots/"
 #SAVEDIR = "./plots/Bayesian_estimates_simdata_BNN/"
-SAVEDIR = "./"
+#SAVEDIR = "./"
 
 script_index = int(sys.argv[1]) 
 
@@ -29,13 +30,19 @@ RANDOM_EFFECTS_TEST = False
 
 model_name = "BNN"
 N_patients = 150
+N_patients_test = 30
 psi_prior="lognormal"
 WEIGHT_PRIOR = "Student_out" #"Horseshoe" # "Student_out" #"symmetry_fix" #"iso_normal" "Student_out"
+net_list = ["pi", "rho_r", "rho_s"] # Which variables should be predicted by a neural net
 N_samples = 10_000
 N_tuning = 10_000
+n_chains = 4
+advi_iterations = 100_000
+maxeval_map = 100_000
+INFERENCE_MODE = "Partial" #"Full" # "Partial"
 ADADELTA = True
 target_accept = 0.99
-CI_with_obs_noise = True
+CI_with_obs_noise = False
 PLOT_RESISTANT = True
 FUNNEL_REPARAMETRIZATION = False
 MODEL_RANDOM_EFFECTS = True
@@ -43,6 +50,7 @@ N_HIDDEN = 2
 P = 5 # Number of covariates
 P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
 true_omega = np.array([0.10, 0.05, 0.20])
+test_seed = 23
 
 M_number_of_measurements = 7
 y_resolution = 80 # Number of timepoints to evaluate the posterior of y in
@@ -60,13 +68,25 @@ X, patient_dictionary, parameter_dictionary, expected_theta_1, true_theta_rho_s,
 # Visualize parameter dependancy on covariates 
 #plot_parameter_dependency_on_covariates(SAVEDIR, name, X, expected_theta_1, true_theta_rho_s, true_rho_s)
 
-# Sample from full model
-neural_net_model = BNN_model(X, patient_dictionary, name, psi_prior=psi_prior, MODEL_RANDOM_EFFECTS=MODEL_RANDOM_EFFECTS, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION, WEIGHT_PRIOR=WEIGHT_PRIOR, n_hidden=N_HIDDEN)
-# Draw samples from posterior:
+if INFERENCE_MODE == "Partial": # Partially stochastic inference
+    print("------------------- PARTIALLY BAYESIAN INFERENCE -------------------")
+    print("Finding MAP estimate for full model")
+    # First get MAP estimate for the full model
+    prelim_full_model = BNN_model(X, patient_dictionary, name, psi_prior=psi_prior, MODEL_RANDOM_EFFECTS=MODEL_RANDOM_EFFECTS, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION, WEIGHT_PRIOR=WEIGHT_PRIOR, n_hidden=N_HIDDEN, net_list=net_list)
+    with prelim_full_model:
+        map_estimate = pm.find_MAP(maxeval=maxeval_map)
+    # Then fix some weights to the MAP estimate and do inference on the remaining weights
+    neural_net_model = partial_BNN_model(map_estimate, X, patient_dictionary, name, psi_prior=psi_prior, MODEL_RANDOM_EFFECTS=MODEL_RANDOM_EFFECTS, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION, WEIGHT_PRIOR=WEIGHT_PRIOR, n_hidden=N_HIDDEN, net_list=net_list)
+else: 
+    print("------------------- FULL BAYESIAN INFERENCE -------------------")
+    # Fully Bayesian, all weights are random variables
+    neural_net_model = BNN_model(X, patient_dictionary, name, psi_prior=psi_prior, MODEL_RANDOM_EFFECTS=MODEL_RANDOM_EFFECTS, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION, WEIGHT_PRIOR=WEIGHT_PRIOR, n_hidden=N_HIDDEN, net_list=net_list)
+
+# Draw samples from posterior, no matter which inference mode:
 with neural_net_model:
     if ADADELTA: 
         print("------------------- ADADELTA INITIALIZATION -------------------")
-        advi_iterations = 100_000
+        advi_iterations = advi_iterations
         advi = pm.ADVI()
         tracker = pm.callbacks.Tracker(
             mean=advi.approx.mean.eval,  # callable that returns mean
@@ -94,7 +114,6 @@ with neural_net_model:
         print("-------------------SAMPLING-------------------")
         # Use approx as starting point for NUTS: https://www.pymc.io/projects/examples/en/latest/variational_inference/GLM-hierarchical-advi-minibatch.html
         scaling = approx.cov.eval()
-        n_chains = 4
         sample = approx.sample(return_inferencedata=False, size=n_chains)
         start_dict = list(sample[i] for i in range(n_chains))    
         # essentially, this is what init='advi' does!!!
@@ -109,17 +128,14 @@ picklefile = open(SAVEDIR+name+'_idata', 'wb')
 pickle.dump(idata, picklefile)
 picklefile.close()
 
-quasi_geweke_test(idata, model_name=model_name, first=0.1, last=0.5)
-plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model_name=model_name)
-
 # Generate test patients
-N_patients_test = 50
-test_seed = 23
 X_test, patient_dictionary_test, parameter_dictionary_test, expected_theta_1_test, true_theta_rho_s_test, true_rho_s_test = generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_test, P, get_expected_theta_from_X_2, true_omega, true_omega_for_psi, seed=test_seed, RANDOM_EFFECTS=RANDOM_EFFECTS_TEST)
 print("Done generating test patients")
 
-plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_test, X_test, SAVEDIR, name, y_resolution, model_name=model_name, parameter_dictionary=parameter_dictionary, PLOT_PARAMETERS=True, parameter_dictionary_test=parameter_dictionary_test, PLOT_PARAMETERS_test=True, PLOT_TREATMENTS=False, MODEL_RANDOM_EFFECTS=MODEL_RANDOM_EFFECTS, CI_with_obs_noise=CI_with_obs_noise, PLOT_RESISTANT=True)
+plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_test, X_test, SAVEDIR, name, y_resolution, model_name=model_name, parameter_dictionary=parameter_dictionary, PLOT_PARAMETERS=True, parameter_dictionary_test=parameter_dictionary_test, PLOT_PARAMETERS_test=True, PLOT_TREATMENTS=False, MODEL_RANDOM_EFFECTS=MODEL_RANDOM_EFFECTS, CI_with_obs_noise=CI_with_obs_noise, PLOT_RESISTANT=True, net_list=net_list, PARALLELLIZE=True, INFERENCE_MODE=INFERENCE_MODE, MAP_weights=map_estimate)
 print("Finished!")
+plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model_name=model_name, net_list=net_list, INFERENCE_MODE="Full")
+quasi_geweke_test(idata, model_name=model_name, first=0.1, last=0.5)
 
 # At how many days to we want to classify people into recurrence / not recurrence: 
 # Here we make sure that all patients have observations at that time by taking the latest time where every patient has an observation

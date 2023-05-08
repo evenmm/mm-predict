@@ -9,7 +9,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 # X is an (N_patients, P) shaped pandas dataframe
 # patient dictionary contains N_patients patients in the same order as X
 
-def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False, n_hidden = 3, net_list=["pi", "rho_r", "rho_s"]):
+def partial_BNN_model(map_estimate, X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False, n_hidden = 3, net_list=["pi", "rho_r", "rho_s"]):
     df = pd.DataFrame(columns=["patient_id", "mprotein_value", "time"])
     for ii in range(len(patient_dictionary)):
         patient = patient_dictionary[ii]
@@ -32,21 +32,16 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
 
     # Initialize random weights between each layer
     init_1 = np.random.randn(X.shape[0], n_hidden)
-    if WEIGHT_PRIOR == "iso_normal":
-        init_out = np.random.randn(n_hidden)
-    else:
-        init_out = abs(np.random.randn(n_hidden))
 
     with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as neural_net_model:
         # Observation noise (std)
         sigma_obs = pm.HalfNormal("sigma_obs", sigma=1)
 
         # alpha
-        alpha = pm.Normal("alpha",  mu=np.array([np.math.log(0.002), np.math.log(0.002), np.math.log(0.5/(1-0.5))]),  sigma=1, shape=3)
+        alpha = pm.Normal("alpha",  mu=np.array([np.log(0.002), np.log(0.002), np.log(0.5/(1-0.5))]),  sigma=1, shape=3)
 
-        log_sigma_weights_in = pm.Normal("log_sigma_weights_in", mu=2*np.math.log(0.01), sigma=2.5**2, shape=(X.shape[0], 1))
+        log_sigma_weights_in = pm.Normal("log_sigma_weights_in", mu=2*np.log(0.01), sigma=2.5**2, shape=(X.shape[0], 1))
         sigma_weights_in = pm.Deterministic("sigma_weights_in", pm.math.exp(log_sigma_weights_in))
-        sigma_weights_out = pm.HalfNormal("sigma_weights_out", sigma=0.1)
         sigma_bias_in = pm.HalfNormal("sigma_bias_in", sigma=1, shape=(1,n_hidden))
 
         # net_list=["pi", "rho_r", "rho_s"]
@@ -57,13 +52,6 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
                 # Weights input to 1st layer
                 weights_in_rho_s_offset = pm.Normal("weights_in_rho_s_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
                 weights_in_rho_s = pm.Deterministic("weights_in_rho_s", weights_in_rho_s_offset * np.repeat(sigma_weights_in, n_hidden, axis=1))
-                # Weights from 1st to 2nd layer
-                if WEIGHT_PRIOR == "iso_normal":
-                    weights_out_rho_s_offset = pm.Normal("weights_out_rho_s_offset ", mu=0, sigma=1, shape=(n_hidden, ))
-                # WEIGHT_PRIOR == "Student_out" does not make sense with funnel
-                else: # Handling symmetry
-                    weights_out_rho_s_offset = pm.HalfNormal("weights_out_rho_s_offset ", sigma=1, shape=(n_hidden, ))
-                weights_out_rho_s = pm.Deterministic("weights_out_rho_s", weights_out_rho_s_offset * sigma_weights_out)
             else:
                 # Weights input to 1st layer
                 if WEIGHT_PRIOR == "Horseshoe":
@@ -77,22 +65,10 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
                     weights_in_rho_s = pm.Deterministic("weights_in_rho_s", z_in_rho_s * tau_in_rho_s * lam_in_rho_s * np.sqrt(c2_in_rho_s / (c2_in_rho_s + tau_in_rho_s**2 * lam_in_rho_s**2))) # dims
                 else: 
                     weights_in_rho_s = pm.Normal('weights_in_rho_s', 0, sigma=np.repeat(sigma_weights_in, n_hidden, axis=1), shape=(X.shape[0], n_hidden), initval=init_1)
-                # Weights from 1st to 2nd layer
-                if WEIGHT_PRIOR == "iso_normal":
-                    weights_out_rho_s = pm.Normal('weights_out_rho_s', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
-                elif WEIGHT_PRIOR == "Student_out": # Handling symmetry
-                    weights_out_rho_s = pm.HalfStudentT('weights_out_rho_s', nu=4, sigma=1, shape=(n_hidden, ), initval=init_out)
-                elif WEIGHT_PRIOR == "Horseshoe":
-                    # Global shrinkage prior
-                    tau_out_rho_s = pm.HalfStudentT("tau_out_rho_s", 2, P0 / (P - P0) * sigma_obs / np.sqrt(N_patients))
-                    # Local shrinkage prior
-                    lam_out_rho_s = pm.HalfStudentT("lam_out_rho_s", 2, shape=(n_hidden, )) #dims
-                    c2_out_rho_s = pm.InverseGamma("c2_out_rho_s", 1, 0.1)
-                    z_out_rho_s = pm.Normal("z_out_rho_s", 0.0, 1.0, shape=(n_hidden, )) #dims
-                    # Shrunken coefficients
-                    weights_out_rho_s = pm.Deterministic("weights_out_rho_s", z_out_rho_s * tau_out_rho_s * lam_out_rho_s * np.sqrt(c2_out_rho_s / (c2_out_rho_s + tau_out_rho_s**2 * lam_out_rho_s**2))) # dims
-                else: # Handling symmetry
-                    weights_out_rho_s = pm.HalfNormal('weights_out_rho_s', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
+            # Weights from 1st to 2nd layer
+            #weights_out_rho_s_offset = map_estimate["weights_out_rho_s_offset"]
+            weights_out_rho_s = map_estimate["weights_out_rho_s"]
+
             # offsets for each node between each layer 
             bias_in_rho_s = pm.Normal("bias_in_rho_s", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_s
             # Calculate Y using neural net 
@@ -111,13 +87,6 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
                 # Weights input to 1st layer
                 weights_in_rho_r_offset = pm.Normal("weights_in_rho_r_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
                 weights_in_rho_r = pm.Deterministic("weights_in_rho_r", weights_in_rho_r_offset * np.repeat(sigma_weights_in, n_hidden, axis=1))
-                # Weights from 1st to 2nd layer
-                if WEIGHT_PRIOR == "iso_normal":
-                    weights_out_rho_r_offset = pm.Normal("weights_out_rho_r_offset ", mu=0, sigma=1, shape=(n_hidden, ))
-                # WEIGHT_PRIOR == "Student_out" does not make sense with funnel
-                else: # Handling symmetry
-                    weights_out_rho_r_offset = pm.HalfNormal("weights_out_rho_r_offset ", sigma=1, shape=(n_hidden, ))
-                weights_out_rho_r = pm.Deterministic("weights_out_rho_r", weights_out_rho_r_offset * sigma_weights_out)
             else:
                 # Weights input to 1st layer
                 if WEIGHT_PRIOR == "Horseshoe":
@@ -131,22 +100,10 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
                     weights_in_rho_r = pm.Deterministic("weights_in_rho_r", z_in_rho_r * tau_in_rho_r * lam_in_rho_r * np.sqrt(c2_in_rho_r / (c2_in_rho_r + tau_in_rho_r**2 * lam_in_rho_r**2))) # dims
                 else: 
                     weights_in_rho_r = pm.Normal('weights_in_rho_r', 0, sigma=np.repeat(sigma_weights_in, n_hidden, axis=1), shape=(X.shape[0], n_hidden), initval=init_1)
-                # Weights from 1st to 2nd layer
-                if WEIGHT_PRIOR == "iso_normal":
-                    weights_out_rho_r = pm.Normal('weights_out_rho_r', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
-                elif WEIGHT_PRIOR == "Student_out": # Handling symmetry
-                    weights_out_rho_r = pm.HalfStudentT('weights_out_rho_r', nu=4, sigma=1, shape=(n_hidden, ), initval=init_out)
-                elif WEIGHT_PRIOR == "Horseshoe":
-                    # Global shrinkage prior
-                    tau_out_rho_r = pm.HalfStudentT("tau_out_rho_r", 2, P0 / (P - P0) * sigma_obs / np.sqrt(N_patients))
-                    # Local shrinkage prior
-                    lam_out_rho_r = pm.HalfStudentT("lam_out_rho_r", 2, shape=(n_hidden, )) #dims
-                    c2_out_rho_r = pm.InverseGamma("c2_out_rho_r", 1, 0.1)
-                    z_out_rho_r = pm.Normal("z_out_rho_r", 0.0, 1.0, shape=(n_hidden, )) #dims
-                    # Shrunken coefficients
-                    weights_out_rho_r = pm.Deterministic("weights_out_rho_r", z_out_rho_r * tau_out_rho_r * lam_out_rho_r * np.sqrt(c2_out_rho_r / (c2_out_rho_r + tau_out_rho_r**2 * lam_out_rho_r**2))) # dims
-                else: # Handling symmetry
-                    weights_out_rho_r = pm.HalfNormal('weights_out_rho_r', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)            
+            # Weights from 1st to 2nd layer
+            #weights_out_rho_r_offset = map_estimate["weights_out_rho_r_offset"]
+            weights_out_rho_r = map_estimate["weights_out_rho_r"]
+
             bias_in_rho_r = pm.Normal("bias_in_rho_r", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_r
             # Calculate Y using neural net 
             # Leaky RELU activation
@@ -164,13 +121,6 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
                 # Weights input to 1st layer
                 weights_in_pi_r_offset = pm.Normal("weights_in_pi_r_offset ", mu=0, sigma=1, shape=(X.shape[0], n_hidden))
                 weights_in_pi_r = pm.Deterministic("weights_in_pi_r", weights_in_pi_r_offset * np.repeat(sigma_weights_in, n_hidden, axis=1))
-                # Weights from 1st to 2nd layer
-                if WEIGHT_PRIOR == "iso_normal":
-                    weights_out_pi_r_offset = pm.Normal("weights_out_pi_r_offset ", mu=0, sigma=1, shape=(n_hidden, ))
-                # WEIGHT_PRIOR == "Student_out" does not make sense with funnel
-                else: # Handling symmetry
-                    weights_out_pi_r_offset = pm.HalfNormal("weights_out_pi_r_offset ", sigma=1, shape=(n_hidden, ))
-                weights_out_pi_r = pm.Deterministic("weights_out_pi_r", weights_out_pi_r_offset * sigma_weights_out)
             else:
                 # Weights input to 1st layer
                 if WEIGHT_PRIOR == "Horseshoe":
@@ -184,22 +134,8 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
                     weights_in_pi_r = pm.Deterministic("weights_in_pi_r", z_in_pi_r * tau_in_pi_r * lam_in_pi_r * np.sqrt(c2_in_pi_r / (c2_in_pi_r + tau_in_pi_r**2 * lam_in_pi_r**2))) # dims
                 else: 
                     weights_in_pi_r = pm.Normal('weights_in_pi_r', 0, sigma=np.repeat(sigma_weights_in, n_hidden, axis=1), shape=(X.shape[0], n_hidden), initval=init_1)
-                # Weights from 1st to 2nd layer
-                if WEIGHT_PRIOR == "iso_normal":
-                    weights_out_pi_r = pm.Normal('weights_out_pi_r', 0, sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
-                elif WEIGHT_PRIOR == "Student_out": # Handling symmetry
-                    weights_out_pi_r = pm.HalfStudentT('weights_out_pi_r', nu=4, sigma=1, shape=(n_hidden, ), initval=init_out)
-                elif WEIGHT_PRIOR == "Horseshoe":
-                    # Global shrinkage prior
-                    tau_out_pi_r = pm.HalfStudentT("tau_out_pi_r", 2, P0 / (P - P0) * sigma_obs / np.sqrt(N_patients))
-                    # Local shrinkage prior
-                    lam_out_pi_r = pm.HalfStudentT("lam_out_pi_r", 2, shape=(n_hidden, )) #dims
-                    c2_out_pi_r = pm.InverseGamma("c2_out_pi_r", 1, 0.1)
-                    z_out_pi_r = pm.Normal("z_out_pi_r", 0.0, 1.0, shape=(n_hidden, )) #dims
-                    # Shrunken coefficients
-                    weights_out_pi_r = pm.Deterministic("weights_out_pi_r", z_out_pi_r * tau_out_pi_r * lam_out_pi_r * np.sqrt(c2_out_pi_r / (c2_out_pi_r + tau_out_pi_r**2 * lam_out_pi_r**2))) # dims
-                else: # Handling symmetry
-                    weights_out_pi_r = pm.HalfNormal('weights_out_pi_r', sigma=sigma_weights_out, shape=(n_hidden, ), initval=init_out)
+            # Weights from 1st to 2nd layer
+            weights_out_pi_r = map_estimate["weights_out_pi_r"]
 
             bias_in_pi_r = pm.Normal("bias_in_pi_r", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_pi_r
             # Calculate Y using neural net 
