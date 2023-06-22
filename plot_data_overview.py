@@ -13,7 +13,7 @@ yearsFmt = mdates.DateFormatter('%Y')
 #monthsFmt = mdates.DateFormatter('%b')
 #yearsFmt = mdates.DateFormatter('\n\n%Y')  # add some space for the year label
 
-filename = './MM_all_patients.xls'
+filename = './MM_all_patients_subset_variables.xls'
 print("Loading data frame from file:", filename)
 df = pd.read_excel(filename)
 print("Number of rows in dataframe:", len(df))
@@ -25,7 +25,7 @@ print(df.head(n=5))
 
 # Columns with dates, drugs or mproteins
 df_mprotein_and_dates = df[['nnid', 
-'Diagnosis date', 'Serum mprotein (SPEP)', 
+'Serum mprotein (SPEP)', 
 'Treatment start', 'Serum mprotein (SPEP) (g/l):', 
 'Date of best response:', 'Serum mprotein:', 
 'Date of best response:.1', 'Serum mprotein:.1', 
@@ -35,7 +35,7 @@ df_mprotein_and_dates = df[['nnid',
 'Date of best respone:.1', 'Serum mprotein:.3', 
 'Progression date:', 'Serum mprotein:.4',
 'DateOfLabValues', 'SerumMprotein',
-'Last-data-entered', 'DateOfDeath']]
+'Last-data-entered']]
 # Remember to update dates and mprotein levels below
 
 # Unclear for Serum mprotein: and ... .1
@@ -243,7 +243,7 @@ patient_colordict = dict(zip(selected_nnid, treat_line_colors[0:len(selected_nni
 # Iterate through lines of treatment with M protein values
 # For each patient, loop over the filtered df_mprotein_and_dates:
 #   Plot the M protein values from the treatment line we are interested in (e.g. first or second time they have Dex+Len+Velcade)
-print(df_selected_mprotein_and_dates[['nnid', 'Diagnosis date', 'Serum mprotein (SPEP)', 'Treatment start', 'Serum mprotein (SPEP) (g/l):', 'Date of best response:', 'Serum mprotein:', 'Date of best response:.1', 'Serum mprotein:.1', 'Date of best respone:', 'Serum mprotein:.2', 'Date of best respone:.1', 'Serum mprotein:.3', 'Progression date:', 'Serum mprotein:.4', 'DateOfLabValues', 'SerumMprotein']].head(n=20))
+print(df_selected_mprotein_and_dates[['nnid', 'Serum mprotein (SPEP)', 'Treatment start', 'Serum mprotein (SPEP) (g/l):', 'Date of best response:', 'Serum mprotein:', 'Date of best response:.1', 'Serum mprotein:.1', 'Date of best respone:', 'Serum mprotein:.2', 'Date of best respone:.1', 'Serum mprotein:.3', 'Progression date:', 'Serum mprotein:.4', 'DateOfLabValues', 'SerumMprotein']].head(n=20))
 nnid = df_selected_mprotein_and_dates.loc[1,['nnid']][0]
 fig, ax1 = plt.subplots()
 ax1.patch.set_facecolor('none')
@@ -263,7 +263,7 @@ for row_index in range(len(df_selected_mprotein_and_dates)):
 
         # Plot the M protein values
         # All:
-        #dates = df_selected_mprotein_and_dates.loc[row_index, ['Diagnosis date', 'Treatment start', 'Date of best response:', 'Date of best response:.1', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
+        #dates = df_selected_mprotein_and_dates.loc[row_index, ['Treatment start', 'Date of best response:', 'Date of best response:.1', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
         #mprotein_levels = df_selected_mprotein_and_dates.loc[row_index, ['Serum mprotein (SPEP)', 'Serum mprotein (SPEP) (g/l):', 'Serum mprotein:', 'Serum mprotein:.1', 'Serum mprotein:.2', 'Serum mprotein:.3', 'Serum mprotein:.4', 'SerumMprotein']]
         # Or just some: 
         dates = df_selected_mprotein_and_dates.loc[row_index, ['Treatment start', 'Date of best respone:']] #, 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
@@ -352,7 +352,7 @@ print(patient_count)
 # Iterate through lines of treatment with M protein values
 # For each patient, loop over the filtered df_mprotein_and_dates:
 #   Plot the M protein values from the treatment line we are interested in (e.g. first or second time they have Dex+Len+Velcade)
-print(df_selected_mprotein_and_dates[['nnid', 'Diagnosis date', 'Serum mprotein (SPEP)', 'Treatment start', 'Serum mprotein (SPEP) (g/l):', 'Date of best response:', 'Serum mprotein:', 'Date of best response:.1', 'Serum mprotein:.1', 'Date of best respone:', 'Serum mprotein:.2', 'Date of best respone:.1', 'Serum mprotein:.3', 'Progression date:', 'Serum mprotein:.4', 'DateOfLabValues', 'SerumMprotein']].head(n=20))
+print(df_selected_mprotein_and_dates[['nnid', 'Serum mprotein (SPEP)', 'Treatment start', 'Serum mprotein (SPEP) (g/l):', 'Date of best response:', 'Serum mprotein:', 'Date of best response:.1', 'Serum mprotein:.1', 'Date of best respone:', 'Serum mprotein:.2', 'Date of best respone:.1', 'Serum mprotein:.3', 'Progression date:', 'Serum mprotein:.4', 'DateOfLabValues', 'SerumMprotein']].head(n=20))
 nnid = df_selected_mprotein_and_dates.loc[1,['nnid']][0]
 patient_history = []
 fig, ax1 = plt.subplots()
@@ -385,7 +385,7 @@ for row_index in range(len(df_selected_mprotein_and_dates)):
         #if len(patient_history) == len(correct_patient_history):
             # It's the last treatment and we plot the M protein values
             # All:
-            #dates = df_selected_mprotein_and_dates.loc[row_index, ['Diagnosis date', 'Treatment start', 'Date of best respone:', 'Date of best response:.1', 'Date of best response:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
+            #dates = df_selected_mprotein_and_dates.loc[row_index, ['Treatment start', 'Date of best respone:', 'Date of best response:.1', 'Date of best response:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
             #mprotein_levels = df_selected_mprotein_and_dates.loc[row_index, ['Serum mprotein (SPEP)', 'Serum mprotein (SPEP) (gSeru.1', 'Serum mm mprotein:', 'Serum mprotein:/l):', 'protein:.2', 'Serum mprotein:.3', 'Serum mprotein:.4', 'SerumMprotein']]
             # Or just some: 
             #dates = df_selected_mprotein_and_dates.loc[row_index, ['Treatment start', 'Date of best respone:', 'Date of best response:.1', 'Date of best response:']] #, 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
@@ -437,7 +437,7 @@ for row_index in range(len(df_selected_mprotein_and_dates)):
         #if len(patient_history) == len(correct_patient_history):
             # It's the last treatment and we plot the M protein values
             # All:
-            #dates = df_selected_mprotein_and_dates.loc[row_index, ['Diagnosis date', 'Treatment start', 'Date of best respone:', 'Date of best response:.1', 'Date of best response:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
+            #dates = df_selected_mprotein_and_dates.loc[row_index, ['Treatment start', 'Date of best respone:', 'Date of best response:.1', 'Date of best response:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
             #mprotein_levels = df_selected_mprotein_and_dates.loc[row_index, ['Serum mprotein (SPEP)', 'Serum mprotein (SPEP) (gSeru.1', 'Serum mm mprotein:', 'Serum mprotein:/l):', 'protein:.2', 'Serum mprotein:.3', 'Serum mprotein:.4', 'SerumMprotein']]
             # Or just some: 
             #dates = df_selected_mprotein_and_dates.loc[row_index, ['Treatment start', 'Date of best respone:', 'Date of best response:.1', 'Date of best response:']] #, 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
@@ -592,7 +592,7 @@ for row_index in range(len(df_mprotein_and_dates)):
             #ax2.plot(drug_interval_2, [drugkey, drugkey], linestyle='-', linewidth=10, marker='D', zorder=2, color=drug_colordict[drugkey])
 
     # Plot Mprotein values at corresponding dates
-    dates = df_mprotein_and_dates.loc[row_index, ['Diagnosis date', 'Treatment start', 'Date of best response:', 'Date of best response:.1', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
+    dates = df_mprotein_and_dates.loc[row_index, ['Treatment start', 'Date of best response:', 'Date of best response:.1', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
     mprotein_levels = df_mprotein_and_dates.loc[row_index, ['Serum mprotein (SPEP)', 'Serum mprotein (SPEP) (g/l):', 'Serum mprotein:', 'Serum mprotein:.1', 'Serum mprotein:.2', 'Serum mprotein:.3', 'Serum mprotein:.4', 'SerumMprotein']]
     # Suppress cases with missing data for mprotein
     nan_mask_mprotein = np.array(mprotein_levels.notna())
@@ -710,7 +710,7 @@ for row_index in range(len(df_mprotein_and_dates)):
         ax2.add_patch(Rectangle((drug_interval_1[0], treat_line_id - plotheight/2), treatment_time_1, plotheight, zorder=2, color=treat_colordict[treat_line_id]))
 
     # Plot Mprotein values at corresponding dates
-    dates = df_mprotein_and_dates.loc[row_index, ['Diagnosis date', 'Treatment start', 'Date of best response:', 'Date of best response:.1', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
+    dates = df_mprotein_and_dates.loc[row_index, ['Treatment start', 'Date of best response:', 'Date of best response:.1', 'Date of best respone:', 'Date of best respone:.1', 'Progression date:', 'DateOfLabValues']]
     mprotein_levels = df_mprotein_and_dates.loc[row_index, ['Serum mprotein (SPEP)', 'Serum mprotein (SPEP) (g/l):', 'Serum mprotein:', 'Serum mprotein:.1', 'Serum mprotein:.2', 'Serum mprotein:.3', 'Serum mprotein:.4', 'SerumMprotein']]
     # Suppress cases with missing data for mprotein
     nan_mask_mprotein = np.array(mprotein_levels.notna())

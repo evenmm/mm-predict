@@ -1,0 +1,69 @@
+I have a model with N subjects labeled i=1,...,N_subjects, each of which has M_i observations Y_i,j taken at times T_i,j, where j=1,...,M_i. 
+If M_i is the same for every subject, we can store the observations in a matrix Y_observed with dimensions (N_subjects, M_i), and store the observation times in a corresponding matrix T. 
+Each subject has parameters psi_i that we want to estimate. (There are priors to make psi_i similar between subjects, which we exclude here for simplicity, but this is why the inference has to be done with all subjects together). A simplified version of the model can be written like this: 
+
+    with pm.Model() as model_1:
+        sigma_psi = pm.HalfNormal("sigma_psi", sigma=1)
+        psi = pm.Normal("psi", mu=0, sigma=sigma_psi, shape=N_subjects)
+        mu_Y = psi * T
+        sigma_obs = pm.HalfNormal("sigma_obs", sigma=1)
+        Y = pm.Normal("Y", mu=mu_Y, sigma=sigma_obs, observed=Y_observed)
+
+If instead each subject can have a different number of observations, the observations can be stored in a matrix with dimensions (N_subjects, max(M_i)) where the M_i observations are trailed by NaN entries for subjects that don't have the most measurements. Now we need to filter out the NaN entries before we evaluate the likelihood. I tried the following: 
+
+    with pm.Model() as model_2:
+        sigma_psi = pm.HalfNormal("sigma_psi", sigma=1)
+        psi = pm.Normal("psi", mu=0, sigma=sigma_psi, shape=N_subjects)
+        mu_Y = psi * T
+        mu_Y = mu_Y[~np.isnan(T)]
+        sigma_obs = pm.HalfNormal("sigma_obs", sigma=1)
+        Y = pm.Normal("Y", mu=mu_Y, sigma=sigma_obs, observed=Y_observed[~np.isnan(T)])
+
+In pm.sample, this **works when using init="jitter+adapt_diag"**, but with init="advi+adapt_diag", **all model parameters become NaN in the first advi iteration**:
+> The current approximation of RV `sigma_obs_log`.ravel()[0] is NaN.
+> The current approximation of RV `sigma_psi_log`.ravel()[0] is NaN.
+> The current approximation of RV `psi`.ravel()[0] is NaN.
+
+Does anyone know why this happens? Is there a "more pymc way" to do: 
+> mu_Y = mu_Y[~np.isnan(T)]
+
+or does the problem lie elsewhere? 
+
+Another way to store the observations is in a flattened list of length "sum(M_i), i=1,...,N", keeping track of where one subject ends and the next begins. 
+
+pymc version 5.1.1.
+
+I have a model with N patients labeled i=1,...,N_patients, each of which has M_i observations Y_i,j taken at times T_i,j, where j=1,...,M_i. 
+If M_i is the same for every patient, we can store the observations in a matrix Y_observed with dimensions (N_patients, M_i), and store the observation times in a corresponding matrix T. 
+Each patient has parameters psi_i that we want to estimate. (There are priors to make psi_i similar between patients, which we exclude here for simplicity, but this is why the inference has to be done with all patients together). A simplified version of the model can be written like this: 
+
+    with pm.Model() as model_1:
+        sigma_psi = pm.HalfNormal("sigma_psi", sigma=1)
+        psi = pm.Normal("psi", mu=0, sigma=sigma_psi, shape=N_patients)
+        mu_Y = psi * T
+        sigma_obs = pm.HalfNormal("sigma_obs", sigma=1)
+        Y = pm.Normal("Y", mu=mu_Y, sigma=sigma_obs, observed=Y_observed)
+
+If instead each patient can have a different number of observations, the observations can be stored in a matrix with dimensions (N_patients, max(M_i)) where the M_i observations are trailed by NaN entries for patients that don't have the most measurements. Now we need to filter out the NaN entries before we evaluate the likelihood. I tried the following: 
+
+    with pm.Model() as model_2:
+        sigma_psi = pm.HalfNormal("sigma_psi", sigma=1)
+        psi = pm.Normal("psi", mu=0, sigma=sigma_psi, shape=N_patients)
+        mu_Y = psi * T
+        mu_Y = mu_Y[~np.isnan(T)]
+        sigma_obs = pm.HalfNormal("sigma_obs", sigma=1)
+        Y = pm.Normal("Y", mu=mu_Y, sigma=sigma_obs, observed=Y_observed[~np.isnan(T)])
+
+In pm.sample, this **works when using init="jitter+adapt_diag"**, but with init="advi+adapt_diag", **all model parameters become NaN in the first advi iteration**:
+> The current approximation of RV `sigma_obs_log`.ravel()[0] is NaN.
+> The current approximation of RV `sigma_psi_log`.ravel()[0] is NaN.
+> The current approximation of RV `psi`.ravel()[0] is NaN.
+
+Does anyone know why this happens? Is there a "more pymc way" to do: 
+> mu_Y = mu_Y[~np.isnan(T)]
+
+or does the problem lie elsewhere? 
+
+Another way to store the observations is in a flattened list of length "sum(M_i), i=1,...,N", keeping track of where one patient ends and the next begins. 
+
+pymc version 5.1.1.

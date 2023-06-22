@@ -2,11 +2,11 @@ from utilities import *
 warnings.simplefilter("ignore")
 import copy
 
-def create_training_instance_dictionary_with_covariates(minimum_number_of_measurements=3, global_treatment_id_list=[1], threshold_for_closeness_for_M_protein_at_start=60, INCLUDE_SUBSEQUENT_DRUG_HOLIDAY = False, verbose=False):
-    #minimum_number_of_measurements = 3 # required number of M protein measurements for a period to be included in the dataset
-    #global_treatment_id_list = [1,2,3,7,10,13,15,16] #[38,62,66,110] are other combinations with the same drugs (but 66 only has 6 patients). # 30 for patient 1727 # Subset of treatment ids we choose to include. [15,16,3,10,7,1,13,2]: #range(1,unique_treat_counter):
-    #threshold_for_closeness_for_M_protein_at_start = 60 # If M protein at period start is missing, it is imputed using the nearest measurement, but only if closer than this threshold number of days.
-    #INCLUDE_SUBSEQUENT_DRUG_HOLIDAY = False #True # If a treatment is followed by a drug holiday, this decided if the holiday is included as part of the period
+def create_training_instance_dictionary_with_covariates(minimum_number_of_measurements=3, global_treatment_id_list=[1], threshold_for_closeness_for_M_protein_at_start=60, INCLUDE_SUBSEQUENT_DRUG_HOLIDAY=False, verbose=False):
+    #minimum_number_of_measurements # required number of M protein measurements for a period to be included in the dataset
+    #global_treatment_id_list, e.g [1,2,3,7,10,13,15,16,38,62,66,110] are other combinations with the same drugs (but 66 only has 6 patients). # 30 for patient 1727 # Subset of treatment ids we choose to include. [15,16,3,10,7,1,13,2]: #range(1,unique_treat_counter):
+    #threshold_for_closeness_for_M_protein_at_start # If M protein at period start is missing, it is imputed using the nearest measurement, but only if closer than this threshold number of days.
+    #INCLUDE_SUBSEQUENT_DRUG_HOLIDAY = False # If a treatment is followed by a drug holiday, this decided if the holiday is included as part of the period
 
     # Load COMMPASS_patient_dictionary
     picklefile = open('./binaries_and_pickles/COMMPASS_patient_dictionary', 'rb')
@@ -171,4 +171,4 @@ def create_training_instance_dictionary_with_covariates(minimum_number_of_measur
     return dummy_patient_dict, training_instance_dict
 
 if __name__ == "__main__":
-    create_training_instance_dictionary_with_covariates()    
+    create_training_instance_dictionary_with_covariates()

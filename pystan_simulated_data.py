@@ -108,19 +108,29 @@ data {
 }
 parameters {
     //matrix[N, K] theta;           // parameters theta
-    vector<upper=log(0.02)>[N] theta_1; // Theta for rho_s: Decay rate of sensitive cells 
-    vector<upper=log(0.02)>[N] theta_2; // Theta for rho_r: Growth rate of resistant cells 
-    vector[N] theta_3; // Theta for pi_r:  Fraction of resistant cells
+    //vector<upper=log(0.02)>[N] theta_1; // Theta for rho_s: Decay rate of sensitive cells 
+    //vector<upper=log(0.02)>[N] theta_2; // Theta for rho_r: Growth rate of resistant cells 
+    //vector[N] theta_3; // Theta for pi_r:  Fraction of resistant cells
     vector<lower=0>[N] rescaled_psi;       // 1/50 of True unobserved M protein at start of treatment  
 
     real<lower=0> sigma;         // observation error standard deviation
     vector<lower=0>[K] omega;  // variances for positive_rho_s, rho_r, pi_r
 
     vector<lower=0>[K] alpha;     // intercepts for positive_rho_s, rho_r, pi_r 
-    matrix[K, P] beta; // coefficients beta for positive_rho_s, rho_r, pi_r
+    //matrix[K, P] beta; // coefficients beta for positive_rho_s, rho_r, pi_r
 }
 transformed parameters {
     // This follows Hilde's example. I assume that these are evaluated when they are needed in the model part 
+    vector[N] theta_1; // Theta for rho_s: Decay rate of sensitive cells 
+    vector[N] theta_2; // Theta for rho_r: Growth rate of resistant cells 
+    vector[N] theta_3; // Theta for pi_r:  Fraction of resistant cells
+    for (i in 1:N)
+        theta_1[i] = log(0.005) + [1] * x[i]'; //Desired alpha[1] = log(0.005)
+    for (i in 1:N)
+        theta_2[i] = log(0.001) + [1] * x[i]'; //Desired alpha[2] = log(0.001)
+    for (i in 1:N)
+        theta_3[i] = alpha[3] + [1] * x[i]'; //Desired alpha[3] = logit(0.4)
+
     vector<lower=-0.2, upper=0>[N] rho_s;
     vector<lower=0, upper=0.2>[N] rho_r;
     vector<lower=0,upper=1>[N] pi_r;
@@ -138,28 +148,28 @@ transformed parameters {
 model {
     // Priors
     // noise variance
-    sigma ~ normal(0,1);
+    sigma ~ normal(0,0.1);
     for (l in 1:K)
-        omega[l] ~ normal(0,1);
+        omega[l] ~ normal(0,0.1);
 
     // alpha and beta
     for (l in 1:K)
-        alpha[l] ~ normal(0,1);
-    for (l in 1:K) {
-        for (b in 1 : P) {
-            beta[l,b] ~ normal(0,1);
-        }
-    }
+        alpha[l] ~ normal(0,0.1);
+    //for (l in 1:K) {
+    //    for (b in 1 : P) {
+    //        beta[l,b] ~ normal(0,1);
+    //    }
+    //}
 
-    // theta
+    //// theta
+    //for (i in 1:N)
+    //    theta_1[i] ~ normal(alpha[1] + beta[1] * x[i]', omega[1]);
+    //for (i in 1:N)
+    //    theta_2[i] ~ normal(alpha[2] + beta[2] * x[i]', omega[2]);
+    //for (i in 1:N)
+    //    theta_3[i] ~ normal(alpha[3] + beta[3] * x[i]', omega[3]);
     for (i in 1:N)
-        theta_1[i] ~ normal(alpha[1] + beta[1] * x[i]', omega[1]);
-    for (i in 1:N)
-        theta_2[i] ~ normal(alpha[2] + beta[2] * x[i]', omega[2]);
-    for (i in 1:N)
-        theta_3[i] ~ normal(alpha[3] + beta[3] * x[i]', omega[3]);
-    for (i in 1:N)
-        rescaled_psi[i] ~ normal(0,1);
+        rescaled_psi[i] ~ normal(0,0.1);
 
     // Likelihood
     for (i in 1 : N) {
@@ -191,6 +201,7 @@ print(fit["pi_r"].shape)
 print(fit["psi"].shape)
 #print(fit["sigma"].shape)
 print(fit["pi_r"].shape)
+print(fit["alpha"].shape)
 
 print("Mean rho_s:", np.mean(fit["rho_s"]))
 print("Mean rho_r:", np.mean(fit["rho_r"]))
@@ -201,6 +212,7 @@ print("Mean pi_r:", np.mean(fit["pi_r"]))
 
 #print("pi_r:", fit["pi_r"])
 print("Average of omega samples:", np.mean(fit["omega"], axis=1))
+print("Average of alpha samples:", np.mean(fit["alpha"], axis=1))
 
 num_samples_here = len(fit["rho_s"][0])
 num_patients_here = len(fit["rho_s"])
@@ -210,12 +222,14 @@ medians_rho_r = [np.sort(fit["rho_r"][i])[median_index] for i in range(num_patie
 medians_pi_r = [np.sort(fit["pi_r"][i])[median_index] for i in range(num_patients_here)]
 medians_psi = [np.sort(fit["psi"][i])[median_index] for i in range(num_patients_here)]
 medians_pi_r = [np.sort(fit["pi_r"][i])[median_index] for i in range(num_patients_here)]
+medians_alpha = [np.sort(fit["alpha"][i])[median_index] for i in range(num_patients_here)]
 
 print("\nMedians rho_s:",  medians_rho_s[:6])
 print("Medians rho_r:",  medians_rho_r[:6])
 print("Medians pi_r:",   medians_pi_r[:6])
 print("Medians psi:",    medians_psi[:6])
 print("Medians pi_r:",   medians_pi_r[:6])
+print("Medians alpha:",   medians_alpha[:6])
 
 print("\nMean rho_s, axis=1:", np.mean(fit["rho_s"], axis=1)[:6])
 print("Mean rho_r, axis=1:", np.mean(fit["rho_r"], axis=1)[:6])

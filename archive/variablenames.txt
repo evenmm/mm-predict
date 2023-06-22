@@ -1,0 +1,157 @@
+nnid
+Disease type
+YearOfBirth
+Age at diagnosis
+Diagnosis date
+Urin mProtein denomination
+Bonemarrow Biopsy
+Smear
+Findings
+Mode of survey
+Cytogenetics/FISH value
+Cytogenetics/FISH
+Neutrophils
+Trombocytes
+troponin T
+pro-BNP (heart condition)
+Lambda
+Kappa
+Serum mprotein (SPEP)
+Urin mprotein (UPEP)
+IgM
+IgG
+IgA
+Hb
+Kreatinin
+Estimated GFR
+Total Calcium
+Albumin
+B2 micro
+Serum FLC
+Mm type
+BSA
+BMI
+Height
+Weight
+Treatment line:
+Disease type:
+Year of birth:
+Kappa/Lambda:
+Albumin corrected calcium:
+Age at diagnosios:
+Treatment start
+Bonemarrow biopsy (%):
+Smear (%):
+Findings:
+Mode of survey:
+Cytogenetics/FISH value:
+Cytogenetics/FISH:
+Neutrophils (x10*9/l):
+Trombocytes (x10*9/l):
+tropin T:
+pro-BNP (heart condition) (pmol/l):
+Lambda (mg/l):
+Kappa (mg/l):
+Urin mprotein (UPEP):
+Serum mprotein (SPEP) (g/l):
+IgM (g/l):
+IgG (g/l):
+IgA (g/l):
+Hb (g/dl):
+Estimated GFR:
+Kreatninin (micromol/l):
+Total calcium (mmol/l):
+Albumin (g/l):
+B2 micro (mg/l):
+Serum FLC:
+Mm type:
+BSA:
+BMI:
+Height (cm):
+Weight (kg):
+Treatment line:.1
+HDT?:
+Maintenance SerumMProtein trace
+Maintenance UrinMProtein trace
+MainBone Marrow
+Calculate response:
+Serum mprotein:
+Urim mprotein:
+Date of best response:
+Kappa/Lambda:.1
+Lambda:
+Kappa:
+Consolidation SerumMProtein trace
+Consolidation UrinMProtein trace
+ConBone Marrow
+Calculate response:.1
+Serum mprotein:.1
+Urin mprotein: 
+Date of best response:.1
+Kappa/Lambda:.2
+Lambda:.1
+Kappa:.1
+Maintenance
+Consolidation?:
+Serum MProtein trace
+Urin MProtein trace
+Bone Marrow
+Drug 1
+Drug 2
+Drug 3
+Drug 4
+Start date
+End date
+Date of best respone:
+Serum mprotein:.2
+Urin mprotein:
+Kappa/Lambda
+Kappa:.2
+Calculate response:.2
+Lambda:.2
+HDTS erumMProtein trace
+HDT UrinMProtein trace
+HdtBone Marrow
+Calculate response:.3
+Drug 1.1
+Drug 2.1
+Drug 3.1
+Drug 4.1
+Start date.1
+End date.1
+Date of best respone:.1
+Serum mprotein:.3
+Kappa:.3
+Urin mprotein:.1
+Lambda:.3
+Kappa/Lambda.1
+NotPreceded
+KriteritumForProgression
+OS
+TTNT
+PFS
+TTP
+TTTF
+Alive:
+MM type:
+Kappa/Lambda:.3
+Lambda:.4
+Kappa:.4
+Urin mprotein
+Serum mprotein:.4
+Progression date:
+Reason for treatment stop
+LostToFollowUp
+last follow-up-date
+CauseRelatedToMM
+CalcKappaLambda
+Lambda.1
+Kappa.1
+Urin mprotein.1
+SerumMprotein
+DateOfLabValues
+CauseOfDeath
+DateOfDeath
+Last-data-entered
+Death date
+male/female

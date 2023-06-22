@@ -23,3 +23,49 @@ for row_index in range(len(df_mprotein_and_dates)):
             # Add treatment line to existing patient
             df_mprotein_and_dates.loc[row_index, "Treatment line "+str(next_treatment_lines_this_patient)] = this_treatment_line
             next_treatment_lines_this_patient = next_treatment_lines_this_patient + 1
+            
+
+#foo = [55.97851164, 35.73303812, 48.15100092, np.nan, np.nan]
+#i = np.where(np.isnan(foo))[0][0] - 1
+#print(i)
+
+#dumdumdict = {99:"99", 100:"100", 200:"200"}
+#for ii in range(20):
+#    dumdumdict[ii] = ii
+#
+#for ii, mtimes in enumerate(dumdumdict.items()):
+#    print(ii)
+#    print(mtimes)
+
+#
+#N_patients = 10
+#mu_Y = []
+#for ii in range(N_patients): 
+#    times = [2,3,4]
+#    nonzero_Y = times
+#    mu_Y.append(nonzero_Y)
+#print(mu_Y)
+#mu_Y = np.array(mu_Y).flatten()
+#print(mu_Y)
+#
+#a = [1,2,3]
+#print(a[0:-1])
+#
+#M_ii = np.random.randint(min(3,len(measurement_times)), len(measurement_times)+1)
+
+import random
+for ii in range(10):
+    measurement_times = [0,10,20,30,40]
+    N_remove = np.random.randint(0, len(measurement_times)-2)
+    selection_mask = random.sample(measurement_times, N_remove)
+    print(selection_mask)
+    mtimes_ii = measurement_times[selection_mask]
+    print(mtimes_ii)
+
+#        for ii in range(N_patients):
+#            times = patient_dictionary[ii].measurement_times
+#            nonzero_Y = psi[ii] * (pi_r[ii]*np.exp(rho_r[ii]*times) + (1-pi_r[ii])*np.exp(rho_s[ii]*times))
+#            mu_Y.append(nonzero_Y)
+#        mu_Y = np.array(mu_Y).flatten()
+
+

@@ -383,7 +383,7 @@ def measure_Mprotein_naive(params, measurement_times, treatment_history):
     return Mprotein_values
     #return params.Y_0 * params.pi_r * np.exp(params.g_r * measurement_times) + params.Y_0 * (1-params.pi_r) * np.exp((params.g_s - params.k_1) * measurement_times)
 
-def generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_local, P, get_expected_theta_from_X, true_omega, true_omega_for_psi, seed, RANDOM_EFFECTS):
+def generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_local, P, get_expected_theta_from_X, true_omega, true_omega_for_psi, seed, RANDOM_EFFECTS, DIFFERENT_LENGTHS=True):
     np.random.seed(seed)
     #X_mean = np.repeat(0,P)
     #X_std = np.repeat(0.5,P)
@@ -424,13 +424,17 @@ def generate_simulated_patients(measurement_times, treatment_history, true_sigma
         rho_s_patient_i = true_rho_s[training_instance_id]
         these_parameters = Parameters(Y_0=psi_patient_i, pi_r=pi_r_patient_i, g_r=rho_r_patient_i, g_s=rho_s_patient_i, k_1=0, sigma=true_sigma_obs)
         # Remove some measurement times from the end: 
-        M_ii = np.random.randint(min(3,len(measurement_times)), len(measurement_times)+1)
+        if DIFFERENT_LENGTHS:
+            M_ii = np.random.randint(min(3,len(measurement_times)), len(measurement_times)+1)
+        else:
+            M_ii = len(measurement_times)
         measurement_times_ii = measurement_times[:M_ii]
         this_patient = Patient(these_parameters, measurement_times_ii, treatment_history, name=str(training_instance_id))
         patient_dictionary[training_instance_id] = this_patient
         parameter_dictionary[training_instance_id] = these_parameters
         #plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=str(training_instance_id), savename="./plots/Bayes_simulated_data/"+str(training_instance_id)
     return X, patient_dictionary, parameter_dictionary, expected_theta_1, true_theta_rho_s, true_rho_s
+    #return X, patient_dictionary, parameter_dictionary, expected_theta_1, true_theta_rho_s, true_rho_s, expected_theta_2, true_theta_rho_r, true_rho_r, expected_theta_3, true_theta_pi_r, true_pi_r
 
 #####################################
 # Plotting
@@ -1205,8 +1209,48 @@ def plot_predictions(args): # Predicts observations of M protein
     plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=parameters_ii, PLOT_PARAMETERS=PLOT_PARAMETERS, plot_title="Posterior predictive CI for test patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant, PLOT_MEASUREMENTS = PLOT_MEASUREMENTS, PLOT_RESISTANT=PLOT_RESISTANT)
     return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
 
+def get_true_pfs(patient_dictionary_test):
+    N_patients_test = len(patient_dictionary_test)
+
+    true_pfs = np.repeat(-1, repeats=N_patients_test)
+    for ii in range(N_patients_test):
+        patient = patient_dictionary_test[ii]
+        mprot = patient.Mprotein_values
+        times = patient.measurement_times
+        # Old criteria: Going above the initial M protein level 
+        #recurrence_or_not[ii] = int( (mprot[1:][times[1:] < evaluation_time] > mprot[0]).any() )
+        # New criteria from https://www.myelomacentral.com/livingwithmm/multiple-myeloma-symptoms-and-diagnosis/glossary-multiple-myeloma-definitions 
+        # At least one of the following: 
+        # a 25% increase in serum M-component with an absolute increase of at least 0.5 g/dL; 
+        # Loop through measurements and find first case 
+        lowest_Mprotein = mprot[0]
+        for tt, time in enumerate(times): 
+            if tt == 0: 
+                    continue
+            if mprot[tt] > lowest_Mprotein*1.25 and mprot[tt] - lowest_Mprotein > 0.5:
+                true_pfs[ii] = time
+                break
+            lowest_Mprotein = min(lowest_Mprotein, mprot[tt])
+        # urine M-component with an absolute increase of at least 200 mg per 24 hours; 
+        # <...> empty for now
+        # an absolute increase in urine M-protein levels in patients without measurable serum and urine M-protein levels; 
+        # <...> empty for now
+        # bone marrow plasma cell percentage of at least 10%; 
+        # <...> empty for now
+        # development of new bone lesions or soft tissue plasmacytomas; 
+        # <...> empty for now
+        # or development of hypercalcemia.
+    print("True PFS", true_pfs)
+    print("Average PFS among actual PFS", np.mean(true_pfs[true_pfs>0]))
+    print("Std PFS among actual PFS", np.std(true_pfs[true_pfs>0]))
+    print("Median PFS among actual PFS", np.median(true_pfs[true_pfs>0]))
+    print("Max PFS among actual PFS", np.max(true_pfs[true_pfs>0]))
+    print("Min PFS among actual PFS", np.min(true_pfs[true_pfs>0]))
+    return true_pfs
+
+"""
 def predict_PFS(args): # Predicts observations of M protein
-    sample_shape, ii, idata, X_test, patient_dictionary_test, N_rand_eff_pred, N_rand_obs_pred, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, evaluation_time = args
+    sample_shape, ii, idata, X_test, patient_dictionary_test, N_rand_eff_pred, N_rand_obs_pred, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, evaluation_time, INFERENCE_MODE, MAP_weights, net_list = args
     if not CI_with_obs_noise:
         N_rand_eff_pred = N_rand_eff_pred * N_rand_obs_pred
         N_rand_obs_pred = 1
@@ -1220,12 +1264,12 @@ def predict_PFS(args): # Predicts observations of M protein
     Mprotein_values = patient.get_Mprotein_values()
     treatment_history = patient.get_treatment_history()
     first_time = min(measurement_times[0], treatment_history[0].start)
-    max_time = find_max_time(measurement_times)
-    #test_times = np.array([30, 60, 90, 120, 150, 180])
-    test_times = np.array([evaluation_time])
-    y_resolution = len(test_times)
+    time_max = find_max_time(measurement_times)
+    y_resolution=100
+    plotting_times = np.linspace(first_time, time_max, y_resolution) #int((measurement_times[-1]+1)*10))
     predicted_parameters = np.empty(shape=(n_chains, n_samples), dtype=object)
     all_predicted_y_values_noiseless = np.empty(shape=(n_chains*N_rand_eff_pred, n_samples, y_resolution))
+    all_predicted_PFS = np.empty(shape=(n_chains*N_rand_eff_pred, n_samples))
     for ch in range(n_chains):
         for sa in range(n_samples):
             sigma_obs = np.ravel(idata.posterior['sigma_obs'][ch,sa])
@@ -1236,32 +1280,62 @@ def predict_PFS(args): # Predicts observations of M protein
                 this_beta_rho_r = np.ravel(idata.posterior['beta_rho_r'][ch,sa])
                 this_beta_pi_r = np.ravel(idata.posterior['beta_pi_r'][ch,sa])
             elif model_name == "BNN": 
-                # weights 
-                weights_in_rho_s = idata.posterior['weights_in_rho_s'][ch,sa]
-                weights_in_rho_r = idata.posterior['weights_in_rho_r'][ch,sa]
-                weights_in_pi_r = idata.posterior['weights_in_pi_r'][ch,sa]
-                weights_out_rho_s = idata.posterior['weights_out_rho_s'][ch,sa]
-                weights_out_rho_r = idata.posterior['weights_out_rho_r'][ch,sa]
-                weights_out_pi_r = idata.posterior['weights_out_pi_r'][ch,sa]
-
-                # intercepts
-                #sigma_bias_in = idata.posterior['sigma_bias_in'][ch,sa]
-                bias_in_rho_s = np.ravel(idata.posterior['bias_in_rho_s'][ch,sa])
-                bias_in_rho_r = np.ravel(idata.posterior['bias_in_rho_r'][ch,sa])
-                bias_in_pi_r = np.ravel(idata.posterior['bias_in_pi_r'][ch,sa])
-
+                if "rho_s" in net_list:
+                    weights_in_rho_s = idata.posterior['weights_in_rho_s'][ch,sa]
+                    if INFERENCE_MODE == "Full":
+                        weights_out_rho_s = idata.posterior['weights_out_rho_s'][ch,sa]
+                    elif INFERENCE_MODE == "Partial": 
+                        weights_out_rho_s = MAP_weights["weights_out_rho_s"]
+                    bias_in_rho_s = np.ravel(idata.posterior['bias_in_rho_s'][ch,sa])
+                pre_act_1_rho_s = np.dot(X_test.iloc[ii,:], weights_in_rho_s) + bias_in_rho_s
                 pre_act_1_rho_s = np.dot(X_test.iloc[ii,:], weights_in_rho_s) + bias_in_rho_s
                 pre_act_1_rho_r = np.dot(X_test.iloc[ii,:], weights_in_rho_r) + bias_in_rho_r
                 pre_act_1_pi_r  = np.dot(X_test.iloc[ii,:], weights_in_pi_r)  + bias_in_pi_r
 
-                act_1_rho_s = np.select([pre_act_1_rho_s > 0, pre_act_1_rho_s <= 0], [pre_act_1_rho_s, pre_act_1_rho_s*0.01], 0)
-                act_1_rho_r = np.select([pre_act_1_rho_r > 0, pre_act_1_rho_r <= 0], [pre_act_1_rho_r, pre_act_1_rho_r*0.01], 0)
+                    pre_act_1_rho_s = np.dot(X_test.iloc[ii,:], weights_in_rho_s) + bias_in_rho_s
+                pre_act_1_rho_r = np.dot(X_test.iloc[ii,:], weights_in_rho_r) + bias_in_rho_r
+                pre_act_1_pi_r  = np.dot(X_test.iloc[ii,:], weights_in_pi_r)  + bias_in_pi_r
+
+                    act_1_rho_s = np.select([pre_act_1_rho_s > 0, pre_act_1_rho_s <= 0], [pre_act_1_rho_s, pre_act_1_rho_s*0.01], 0)
+                    act_out_rho_s = np.dot(act_1_rho_s, weights_out_rho_s)
+                else: 
+                    act_out_rho_s = 0
+
+                if "rho_r" in net_list:
+                    weights_in_rho_r = idata.posterior['weights_in_rho_r'][ch,sa]
+                    if INFERENCE_MODE == "Full":
+                        weights_out_rho_r = idata.posterior['weights_out_rho_r'][ch,sa]
+                    elif INFERENCE_MODE == "Partial": 
+                        weights_out_rho_r = MAP_weights["weights_out_rho_r"]
+                    bias_in_rho_r = np.ravel(idata.posterior['bias_in_rho_r'][ch,sa])
+                    pre_act_1_rho_r = np.dot(X_test.iloc[ii,:], weights_in_rho_r) + bias_in_rho_r
+                    act_1_rho_r = np.select([pre_act_1_rho_r > 0, pre_act_1_rho_r <= 0], [pre_act_1_rho_r, pre_act_1_rho_r*0.01], 0)
+                    act_out_rho_r = np.dot(act_1_rho_r, weights_out_rho_r)
+                else:
+                    act_out_rho_r = 0
+
+                if "pi_r" in net_list:
+                    weights_in_pi_r = idata.posterior['weights_in_pi_r'][ch,sa]
+                    if INFERENCE_MODE == "Full":
+                        weights_out_pi_r = idata.posterior['weights_out_pi_r'][ch,sa]
+                    elif INFERENCE_MODE == "Partial": 
+                        weights_out_pi_r = MAP_weights["weights_out_pi_r"]
+                    bias_in_pi_r = np.ravel(idata.posterior['bias_in_pi_r'][ch,sa])
+                    pre_act_1_pi_r  = np.dot(X_test.iloc[ii,:], weights_in_pi_r)  + bias_in_pi_r
+                act_1_pi_r =  np.select([pre_act_1_pi_r  > 0, pre_act_1_pi_r  <= 0], [pre_act_1_pi_r,  pre_act_1_pi_r*0.01],  0)
                 act_1_pi_r =  np.select([pre_act_1_pi_r  > 0, pre_act_1_pi_r  <= 0], [pre_act_1_pi_r,  pre_act_1_pi_r*0.01],  0)
 
                 # Output
                 act_out_rho_s = np.dot(act_1_rho_s, weights_out_rho_s)
                 act_out_rho_r = np.dot(act_1_rho_r, weights_out_rho_r)
-                act_out_pi_r =  np.dot(act_1_pi_r,  weights_out_pi_r)
+                    act_1_pi_r =  np.select([pre_act_1_pi_r  > 0, pre_act_1_pi_r  <= 0], [pre_act_1_pi_r,  pre_act_1_pi_r*0.01],  0)
+
+                # Output
+                act_out_rho_s = np.dot(act_1_rho_s, weights_out_rho_s)
+                act_out_rho_r = np.dot(act_1_rho_r, weights_out_rho_r)
+                    act_out_pi_r =  np.dot(act_1_pi_r,  weights_out_pi_r)
+                else:
+                    act_out_pi_r = 0
 
             elif model_name == "joint_BNN": 
                 # weights 
@@ -1312,30 +1386,59 @@ def predict_PFS(args): # Predicts observations of M protein
                 predicted_parameters[ch,sa] = Parameters(Y_0=this_psi, pi_r=predicted_pi_r, g_r=predicted_rho_r, g_s=predicted_rho_s, k_1=0, sigma=sigma_obs)
                 these_parameters = predicted_parameters[ch,sa]
                 # Predicted total and resistant M protein
-                predicted_y_values_noiseless = measure_Mprotein_noiseless(these_parameters, test_times, treatment_history)
+                predicted_y_values_noiseless = measure_Mprotein_noiseless(these_parameters, plotting_times, treatment_history)
                 all_predicted_y_values_noiseless[N_rand_eff_pred*ch + ee, sa] = predicted_y_values_noiseless
+                # Find lowest value of M protein: (Predicted M protein is a convex function so all values before the lowest value are diminishing)
+                smallest = np.min(all_predicted_y_values_noiseless)
+                condition = (all_predicted_y_values_noiseless > smallest * 1.25) & (all_predicted_y_values_noiseless > smallest + 0.5)
+                indices = np.where(condition)[0]
+                if indices.size > 0:
+                    pfs_index = indices[0]
+                    pfs_time = plotting_times[pfs_index]
+                else:
+                    pfs_time = -1
+                all_predicted_PFS[N_rand_eff_pred*ch + ee, sa] = pfs_time
+                #lowest_Mprotein = np.amin(predicted_y_values_noiseless)
+                #difference_array = predicted_y_values_noiseless - lowest_Mprotein
+                #first_above_lowest = np.where(difference_array > 0)[0][0]
+                #index_array = np.where(predicted_y_values_noiseless > lowest_Mprotein and predicted_y_values_noiseless-lowest_Mprotein > 0.5)[0]
+                #if len(index_array) < 1: 
+                #    all_predicted_PFS[N_rand_eff_pred*ch + ee, sa] = -1
+                #else: 
+                #    pfs_index = index_array[0]
+                #    pfs_time = plotting_times[pfs_index]
+                #    all_predicted_PFS[N_rand_eff_pred*ch + ee, sa] = pfs_time
+                ##pfs_index = next(idx for idx, value in enumerate(predicted_y_values_noiseless) if (value > lowest_Mprotein and lowest_Mprotein - value < 0.5))
+                ##pfs_time = plotting_times[pfs_index]
+                ##all_predicted_PFS[N_rand_eff_pred*ch + ee, sa] = pfs_time
+
     flat_pred_y_values_noiseless = np.reshape(all_predicted_y_values_noiseless, (n_chains*n_samples*N_rand_eff_pred, y_resolution))
     ## PFS prediction
     #pfs_indices = np.empty(n_chains*n_samples*N_rand_eff_pred)
     ## For each sample get first index after 0 where the predicted M protein is greater than first value. Index is then that + 1
     #for kk in range(n_chains*n_samples*N_rand_eff_pred):
-    #    index_array = np.where(flat_pred_y_values_noiseless[kk,1:] > flat_pred_y_values_noiseless[kk,0])[0]
+    #    smallest_value = np.amin(flat_pred_y_values_noiseless[kk,:])
+    #    index_array = np.where(flat_pred_y_values_noiseless[kk,1:] > smallest_value and flat_pred_y_values_noiseless[kk,1:]-smallest_value > 0.5)[0]
     #    if len(index_array) < 1: 
     #        pfs_indices[kk] = -1
     #    else: 
-    #        pfs_indices[kk] = index_array[0] + 1
-    #predicted_PFS = [test_times[int(kk)] for kk in pfs_indices]
-    ## Posterior median is the PFS prediction: 
-    #point_predicted_PFS = np.median(predicted_PFS)
+    #        pfs_indices[kk] = index_array[0]
+    #predicted_PFS = [plotting_times[int(tt)] for tt in pfs_indices]
+    
+    # Posterior median is the PFS prediction: 
+    predicted_PFS = np.reshape(all_predicted_PFS, (n_chains*n_samples*N_rand_eff_pred))
+    point_predicted_PFS = np.median(predicted_PFS)
 
     # Predicted probability of recurrence
     # at 6 months = 180 days
+    # THIS IS WRONG DON'T USE IT
     predicted_at_x_months = flat_pred_y_values_noiseless[:,-1]
     # The proportion of samples at that day that is above the first observed M protein value 
     p_recurrence = len(predicted_at_x_months[predicted_at_x_months > Mprotein_values[0]]) / len(predicted_at_x_months)
-    return p_recurrence #predicted_PFS, point_predicted_PFS
+    return p_recurrence, predicted_PFS, point_predicted_PFS
+"""
 
-def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_test, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, SAVEDIR, name):
+def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_test, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, SAVEDIR, name, INFERENCE_MODE, MAP_weights, net_list):
     N_patients_test = len(patient_dictionary_test)
 
     recurrence_or_not = np.zeros(N_patients_test)
@@ -1371,8 +1474,8 @@ def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_
         # development of new bone lesions or soft tissue plasmacytomas; 
         # <...> empty for now
         # or development of hypercalcemia.
-    print("Recurrence", recurrence_or_not)
-    print("Proportion with recurrence:", np.mean(recurrence_or_not))
+    #print("Recurrence", recurrence_or_not)
+    #print("Proportion with recurrence:", np.mean(recurrence_or_not))
 
     sample_shape = idata.posterior['psi'].shape # [chain, n_samples, dim]
     N_samples = sample_shape[1]
@@ -1387,22 +1490,24 @@ def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_
         N_rand_eff_pred = 1 # Number of random intercept samples to draw for each idata sample when we make predictions
         N_rand_obs_pred = 10 # Number of observation noise samples to draw for each parameter sample 
 
-    args = [(sample_shape, ii, idata, X_test, patient_dictionary_test, N_rand_eff_pred, N_rand_obs_pred, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, evaluation_time) for ii in range(N_patients_test)]
+    args = [(sample_shape, ii, idata, X_test, patient_dictionary_test, N_rand_eff_pred, N_rand_obs_pred, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, evaluation_time, INFERENCE_MODE, MAP_weights, net_list) for ii in range(N_patients_test)]
 
     p_recurrence = np.zeros(N_patients_test) 
+    predicted_PFS = np.empty(N_patients_test, dtype=object)
+    point_predicted_PFS = np.zeros(N_patients_test) 
     for ii, elem in enumerate(args):
-        p_recurrence[ii] = predict_PFS(elem)
+        p_recurrence[ii], predicted_PFS[ii], point_predicted_PFS[ii] = predict_PFS(elem)
     
-    print("recurrence_or_not", recurrence_or_not)
-    print("p_recurrence", p_recurrence)
+    #print("recurrence_or_not", recurrence_or_not)
+    #print("p_recurrence", p_recurrence)
 
-    picklefile = open(SAVEDIR+name+'_recurrence_or_not', 'wb')
-    pickle.dump(recurrence_or_not, picklefile)
-    picklefile.close()
+    #picklefile = open(SAVEDIR+name+'_recurrence_or_not', 'wb')
+    #pickle.dump(recurrence_or_not, picklefile)
+    #picklefile.close()
 
-    picklefile = open(SAVEDIR+name+'_p_recurrence', 'wb')
-    pickle.dump(p_recurrence, picklefile)
-    picklefile.close()
+    #picklefile = open(SAVEDIR+name+'_p_recurrence', 'wb')
+    #pickle.dump(p_recurrence, picklefile)
+    #picklefile.close()
 
     """
     # Commented out only because med-biostat2 does not have sklearn 
@@ -1428,6 +1533,7 @@ def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_
     #plt.show()
     plt.close()
     """
+    return recurrence_or_not, p_recurrence, predicted_PFS, point_predicted_PFS
 
 def plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_test, X_test, SAVEDIR, name, y_resolution, model_name, parameter_dictionary, PLOT_PARAMETERS, parameter_dictionary_test, PLOT_PARAMETERS_test, PLOT_TREATMENTS, MODEL_RANDOM_EFFECTS, CI_with_obs_noise=True, PARALLELLIZE=True, PLOT_RESISTANT=True, PLOT_MEASUREMENTS_test=False, net_list=["pi", "rho_r", "rho_s"], INFERENCE_MODE="Full", MAP_weights={}):
     sample_shape = idata.posterior['psi'].shape # [chain, n_samples, dim]
@@ -1483,38 +1589,53 @@ def plot_all_credible_intervals(idata, patient_dictionary, patient_dictionary_te
             plot_predictions(elem)
     print("...done.")
 
-def plot_parameter_dependency_on_covariates(SAVEDIR, name, X, expected_theta_1, true_theta_rho_s, true_rho_s):
+def plot_parameter_dependency_on_covariates(SAVEDIR, name, X, expected_theta_1, true_theta_rho_s, true_rho_s, expected_theta_2, true_theta_rho_r, true_rho_r, expected_theta_3, true_theta_pi_r, true_pi_r):
     color_array = X["Covariate 2"].to_numpy()
+    striplets = [("expected_theta_1", "true_theta_rho_s", "true_rho_s"), ("expected_theta_2", "true_theta_rho_r", "true_rho_r"), ("expected_theta_3", "true_theta_pi_r", "true_pi_r")]
+    for ii, triplet in enumerate([(expected_theta_1, true_theta_rho_s, true_rho_s), (expected_theta_2, true_theta_rho_r, true_rho_r), (expected_theta_3, true_theta_pi_r, true_pi_r)]):
+        striplet = striplets[ii]
+        for jj, elem in enumerate(triplet):
+            selem = striplet[jj]
+            for covariate in ["Covariate 1", "Covariate 3"]:
+                # Covariates 1 and 2
+                fig, ax = plt.subplots()
+                ax.set_title(selem)
+                points = ax.scatter(X[covariate], elem, c=color_array, cmap="plasma")
+                ax.set_xlabel(covariate)
+                ax.set_ylabel(selem)
+                cbar = fig.colorbar(points)
+                cbar.set_label('covariate 2', rotation=90)
+                plt.savefig(SAVEDIR + '_'.join(["effects",covariate,str(ii),str(jj),selem,name,".pdf"]), dpi=300)
+                plt.close()
 
-    fig, ax = plt.subplots()
-    ax.set_title("expected_theta_1 depends on covariates 1 and 2")
-    points = ax.scatter(X["Covariate 1"], expected_theta_1, c=color_array, cmap="plasma")
-    ax.set_xlabel("covariate 1")
-    ax.set_ylabel("expected_theta_1")
-    cbar = fig.colorbar(points)
-    cbar.set_label('covariate 2', rotation=90)
-    plt.savefig(SAVEDIR+"effects_1_"+name+".pdf", dpi=300)
-    plt.close()
-
-    fig, ax = plt.subplots()
-    ax.set_title("true_theta_rho_s depends on covariates 1 and 2")
-    points = ax.scatter(X["Covariate 1"], true_theta_rho_s, c=color_array, cmap="plasma")
-    ax.set_xlabel("covariate 1")
-    ax.set_ylabel("true_theta_rho_s")
-    cbar = fig.colorbar(points)
-    cbar.set_label('covariate 2', rotation=90)
-    plt.savefig(SAVEDIR+"effects_2_"+name+".pdf", dpi=300)
-    plt.close()
-
-    fig, ax = plt.subplots()
-    ax.set_title("true_rho_s depends on covariates 1 and 2")
-    points = ax.scatter(X["Covariate 1"], true_rho_s, c=color_array, cmap="plasma")
-    ax.set_xlabel("covariate 1")
-    ax.set_ylabel("true_rho_s")
-    cbar = fig.colorbar(points)
-    cbar.set_label('covariate 2', rotation=90)
-    plt.savefig(SAVEDIR+"effects_3_"+name+".pdf", dpi=300)
-    plt.close()
+# Plot pi, rho and alpha against each covariate
+def plot_parameters_and_covariates(SAVEDIR, name, X, rho_s, rho_r, pi_r, covariates):
+    triplet = [rho_s, rho_r, pi_r]
+    striplet = ["rho_s", "rho_r", "pi_r"]
+    #color_array = X["Covariate 2"].to_numpy()
+    N_COLS = 5
+    for jj, elem in enumerate(triplet):
+        parameter = striplet[jj]
+        # Plot in a grid: 
+        fig, axes = plt.subplots(ncols=N_COLS, nrows=max(2,1+int(len(covariates)/N_COLS)), figsize=(15,15))
+        plt.suptitle(parameter)
+        for ii, covariate in enumerate(covariates):
+            points = axes[int(ii/N_COLS), ii % N_COLS].scatter(X[covariate], elem, c="k") #c=color_array, cmap="plasma")
+            axes[int(ii/N_COLS), ii % N_COLS].set_xlabel(covariate)
+        plt.tight_layout()
+        plt.savefig(SAVEDIR + '_'.join(["overview",parameter,name,".pdf"]), dpi=300)
+        plt.close()
+"""
+        for covariate in covariates:
+            # Covariates 1 and 2
+            fig, ax = plt.subplots()
+            ax.set_title(parameter)
+            points = ax.scatter(X[covariate], elem, c="k") #c=color_array, cmap="plasma")
+            ax.set_ylabel(parameter)
+            ax.set_xlabel(covariate)
+            plt.savefig(SAVEDIR + '_'.join(["overview",covariate,str(jj),parameter,name,".pdf"]), dpi=300)
+            plt.close()
+"""
 
 #####################################
 # Inference
@@ -1589,7 +1710,7 @@ def get_optimization_result(args):
     res = optimize.minimize(fun=least_squares_objective_function, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False})
     return res
 
-def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
+def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000, PARALLELLIZE=True):
     global_sigma = 1
     # If the bounds do not include bounds for k_1, we set it to zero before and after optimization
     #bounds_Y_0 = (lb[0], ub[0])
@@ -1608,9 +1729,13 @@ def estimate_drug_response_parameters(patient, lb, ub, N_iterations=10000):
     x0_array = lb + np.multiply(all_random_samples, (ub-lb))
 
     args = [(x0_array[i],patient,all_bounds) for i in range(len(x0_array))]
-    with Pool(15) as pool:
-        optim_results = pool.map(get_optimization_result,args)
-    
+    if PARALLELLIZE:
+        with Pool(15) as pool:
+            optim_results = pool.map(get_optimization_result,args)
+    else: 
+        optim_results = []
+        for elem in args:
+            optim_results.append(get_optimization_result(elem))    
     #min_f = min(optim_results, key=lambda x: x.fun)
     fun_value_list = [elem.fun for elem in optim_results]
     min_f_index = fun_value_list.index(min(fun_value_list))
@@ -1635,15 +1760,20 @@ def get_optimization_result_any_model(args):
     res = optimize.minimize(fun=negative_loglikelihood_any_model, x0=x0, args=(patient), bounds=all_bounds, options={'disp':False}, method='SLSQP') # L-BFGS-B chosen automatically with bounds
     return res
 
-def estimate_drug_response_parameters_any_model(patient, lb, ub, N_iterations=10000):
+def estimate_drug_response_parameters_any_model(patient, lb, ub, N_iterations=10000, PARALLELLIZE=True):
     # This function accepts bounds and parameters of any model. THe length determines the model. 
     all_bounds = tuple([(lb[ii], ub[ii]) for ii in range(len(ub))])
     all_random_samples = np.random.uniform(0,1,(N_iterations, len(ub)))
     x0_array = lb + np.multiply(all_random_samples, (ub-lb))
 
     args = [(x0_array[i],patient,all_bounds) for i in range(len(x0_array))]
-    with Pool(15) as pool:
-        optim_results = pool.map(get_optimization_result_any_model,args)
+    if PARALLELLIZE:
+        with Pool(15) as pool:
+            optim_results = pool.map(get_optimization_result_any_model,args)
+    else: 
+        optim_results = []
+        for elem in args:
+            optim_results.append(get_optimization_result_any_model(elem))
     fun_value_list = [elem.fun for elem in optim_results]
     min_f_index = fun_value_list.index(min(fun_value_list))
     x_value_list = [elem.x for elem in optim_results]
@@ -1696,6 +1826,40 @@ def get_binary_outcome(period_start, patient, this_estimate, days_for_considerat
     #else: # if the list has no length, i.e. we have no measurements of it
     #    binary_outcome = np.nan
     #return binary_outcome
+
+def estimate_individual_parameters(patient_dictionary, N_iter=10000, plotting=True, SAVEDIR="./", name="_"):
+    negative_loglikelihoods = []
+    Y_parameters = []
+    rho_s = []
+    rho_r = []
+    pi_r = []
+    N_iter = N_iter # separate minimzations of the least squares when fitting parameters
+    #def estimate_and_save_region_estimate(training_instance_id, period_start, period_end, minimum_number_of_measurements, dummy_measurement_times, dummy_Mprotein_values, dummy_Kappa_values, dummy_Lambda_values, how_many_regions, training_instance_dict, patient, Y_parameters, treatment_id_of_interest, negative_loglikelihoods_1, negative_loglikelihoods_2, negative_loglikelihoods, bic_values_1, bic_values_2, bic_values_3, aic_c_values_1, aic_c_values_2, aic_c_values_3):
+    for _, this_patient in patient_dictionary.items():
+        # Estimate parameters for model 3
+        # Model 3: Both together.       (5+1=6 parameters: Y0, pi, rho, alpha, K, sigma)
+        this_estimate = estimate_drug_response_parameters_any_model(this_patient, lb_3, ub_3, N_iterations=N_iter) #, sigma_noise_std=1
+        array_x = np.array([this_estimate.Y_0, this_estimate.pi_r, this_estimate.g_r, this_estimate.g_s, this_estimate.k_1, this_estimate.sigma])
+        predictions = measure_Mprotein_noiseless(this_estimate, this_patient.measurement_times, this_patient.treatment_history)
+        sumofsquares_model_3 = np.sum((this_patient.Mprotein_values - predictions)**2)
+        sample_variance_unadjusted_model_3 = sumofsquares_model_3/len(this_patient.measurement_times)
+        negative_loglikelihoods.append(negative_loglikelihood_any_model(array_x, this_patient)) #, sigma_noise_std=sample_variance_unadjusted_model_3))
+        #print(negative_loglikelihoods[training_instance_id])
+        
+        Y_parameters.append(this_estimate) # training_instance_id is position in Y_parameters
+        rho_s.append(this_estimate.g_s - this_estimate.k_1)
+        rho_r.append(this_estimate.g_r)
+        pi_r.append(this_estimate.pi_r)
+
+        # Plotting treatment region with estimate (using model 3 estimate)
+        #for index, param_set in enumerate(patient.parameter_estimates):
+        estimated_parameters = this_estimate # patient.parameter_estimates[index]
+        #savename = "./COMMPASS_estimate_plots/treatment_id_"+str(treatment_id_of_interest)+"/Treatment_"+str(treatment_id_of_interest)+"_"+patient.name+"_at_time"+str(period_start)+"Y_0="+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sigma="+str(estimated_parameters.sigma)+".png"
+        if plotting: 
+            savename = SAVEDIR+name+"_".join(["patient"+this_patient.name,"Y_0="])+str(estimated_parameters.Y_0)+", pi_r="+str(estimated_parameters.pi_r)+", g_r="+str(estimated_parameters.g_r)+", g_s="+str(estimated_parameters.g_s)+", k_1="+str(estimated_parameters.k_1)+", sigma="+str(estimated_parameters.sigma)+".png"
+            plot_title = this_patient.name
+            plot_treatment_region_with_estimate(estimated_parameters, this_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=plot_title, savename=savename)
+    return rho_s, rho_r, pi_r
 
 #####################################
 # Posterior evaluation
@@ -1772,7 +1936,7 @@ def get_expected_theta_from_X_one_interaction(X): # One interaction: In rho_s on
     expected_theta_3 = np.reshape(true_alpha[2] + np.dot(X, true_beta_pi_r), (N_patients_local,1))
     return expected_theta_1, expected_theta_2, expected_theta_3
 
-def get_expected_theta_from_X_2(X): # One interaction: In rho_s only
+def get_expected_theta_from_X_2(X): # pi and rho_s
     N_patients_local, P = X.shape
     # These are the true parameters for a patient with all covariates equal to 0:
     rho_s_population = -0.005
@@ -1808,3 +1972,56 @@ def get_expected_theta_from_X_2(X): # One interaction: In rho_s only
     expected_theta_2 = np.reshape(true_alpha[1] + np.dot(X, true_beta_rho_r), (N_patients_local,1))
     expected_theta_3 = np.reshape(true_alpha[2] + np.dot(X, true_beta_pi_r)  + np.ravel(interaction_beta_x2_x3_pi_r*X["Covariate 2"]*(X["Covariate 3"].T)), (N_patients_local,1))
     return expected_theta_1, expected_theta_2, expected_theta_3
+
+def get_expected_theta_from_X_3_pi_rho(X): # Pi and rho_r
+    N_patients_local, P = X.shape
+    # These are the true parameters for a patient with all covariates equal to 0:
+    rho_s_population = -0.005
+    rho_r_population = 0.001
+    pi_r_population = 0.3
+    theta_rho_s_population_for_x_equal_to_zero = np.log(-rho_s_population)
+    theta_rho_r_population_for_x_equal_to_zero = np.log(rho_r_population)
+    theta_pi_r_population_for_x_equal_to_zero  = np.log(pi_r_population/(1-pi_r_population))
+
+    true_alpha = np.array([theta_rho_s_population_for_x_equal_to_zero, theta_rho_r_population_for_x_equal_to_zero, theta_pi_r_population_for_x_equal_to_zero])
+    true_beta_rho_s = np.zeros(P)
+    #true_beta_rho_s[0] = 0.8
+    #true_beta_rho_s[1] = 0
+    #true_beta_rho_s[2] = 0.4
+    #true_beta_rho_s[3] = 0.3
+    #true_beta_rho_s[4] = 0.2
+    #interaction_beta_x1_x2_rho_r = -1
+    true_beta_rho_r = np.zeros(P)
+    true_beta_rho_r[0] = 0.7
+    true_beta_rho_r[1] = 1.0
+    true_beta_rho_r[2] = 0.4
+    #true_beta_rho_r[3] = 0.2
+    #true_beta_rho_r[4] = 0.1
+    interaction_beta_x1_x2_rho_r = -1
+    true_beta_pi_r = np.zeros(P)
+    true_beta_pi_r[0] = 0.0
+    true_beta_pi_r[1] = 1.1
+    true_beta_pi_r[2] = 0.1
+    #true_beta_pi_r[3] = 0.3
+    #true_beta_pi_r[4] = 0.4
+    interaction_beta_x2_x3_pi_r = 1
+
+    expected_theta_1 = np.reshape(true_alpha[0] + np.dot(X, true_beta_rho_s), (N_patients_local,1))
+    expected_theta_2 = np.reshape(true_alpha[1] + np.dot(X, true_beta_rho_r) + np.ravel(interaction_beta_x1_x2_rho_r*X["Covariate 1"]*(X["Covariate 2"].T)), (N_patients_local,1))
+    expected_theta_3 = np.reshape(true_alpha[2] + np.dot(X, true_beta_pi_r)  + np.ravel(interaction_beta_x2_x3_pi_r*X["Covariate 2"]*(X["Covariate 3"].T)), (N_patients_local,1))
+    return expected_theta_1, expected_theta_2, expected_theta_3
+
+def get_sample_weights(args):
+    sample_shape, ii, idata = args
+    n_chains = sample_shape[0]
+    n_samples = sample_shape[1]
+    pi_r_values      = [np.ravel(idata.posterior['pi_r'][ch,sa,ii]) for ch in range(n_chains) for sa in range(n_samples)]
+    rho_s_values     = [np.ravel(idata.posterior['rho_s'][ch,sa,ii]) for ch in range(n_chains) for sa in range(n_samples)]
+    rho_r_values     = [np.ravel(idata.posterior['rho_r'][ch,sa,ii]) for ch in range(n_chains) for sa in range(n_samples)]
+    mean_rho_s = np.mean(rho_s_values)
+    sample_weights_rho_s = np.var(rho_s_values)
+    mean_rho_r = np.mean(rho_r_values)
+    sample_weights_rho_r = np.var(rho_r_values)
+    mean_pi_r = np.mean(pi_r_values)
+    sample_weights_pi_r = np.var(pi_r_values)
+    return mean_rho_s, sample_weights_rho_s, mean_rho_r, sample_weights_rho_r,  mean_pi_r, sample_weights_pi_r

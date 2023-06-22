@@ -18,7 +18,7 @@ def isNaN(string):
 # M protein data
 filename = './COMMPASS_data/CoMMpass_IA17_FlatFiles/MMRF_CoMMpass_IA17_PER_PATIENT_VISIT_V2.tsv'
 print("Loading data frame from file:", filename)
-df = pd.read_csv(filename, sep='\t')
+df = pd.read_csv(filename, sep='\t', encoding='cp1252')
 print("Number of rows in dataframe:", len(df))
 print("PUBLIC_ID of first patient:", df.loc[0,['PUBLIC_ID']][0])
 print("PUBLIC_ID of last patient:", df.loc[len(df)-1,['PUBLIC_ID']][0])
@@ -48,7 +48,7 @@ print("There are "+str(number_of_unique_nnid)+" unique patients.")
 # Drug data
 filename = './COMMPASS_data/CoMMpass_IA17_FlatFiles/MMRF_CoMMpass_IA17_STAND_ALONE_TREATMENT_REGIMEN_V2.tsv'
 print("Loading data frame from file:", filename)
-df = pd.read_csv(filename, sep='\t')
+df = pd.read_csv(filename, sep='\t', encoding='cp1252')
 print("Number of rows in dataframe:", len(df))
 print(df.head(n=5))
 df_drugs_and_dates = df[[
@@ -517,7 +517,7 @@ def plot_patient(PUBLIC_ID):
 
     # Plot Mprotein values
     for index, row in df_mprotein_and_dates.loc[df_mprotein_and_dates['PUBLIC_ID'] == PUBLIC_ID].iterrows():
-        date = row['VISITDY']
+        date = row['VISITDY'] - (1970)*365
         mprotein_value = row['D_LAB_serum_m_protein']
         # Suppress cases with missing data for mprotein
         # nan_mask_mprotein = np.array(mprotein_value.notna())
@@ -532,18 +532,18 @@ def plot_patient(PUBLIC_ID):
             count_mprotein = count_mprotein+1
 
         ax1.plot(date, mprotein_value, linestyle='', marker='x', zorder=3, color='k')
-        ax1.axvline(date, color="k", linewidth=0.5, linestyle="-")
+        #ax1.axvline(date, color="k", linewidth=0.5, linestyle="-")
 
         # Plot light chain (Kappa/Lambda) values at corresponding dates
-        kappa_levels = row['D_LAB_serum_kappa']
-        ax1.plot(date, kappa_levels, linestyle='', marker='x', zorder=2, color='b')
-        lambda_levels = row['D_LAB_serum_lambda']
-        ax1.plot(date, lambda_levels, linestyle='', marker='x', zorder=2, color='r')
+        #kappa_levels = row['D_LAB_serum_kappa']
+        #ax1.plot(date, kappa_levels, linestyle='', marker='x', zorder=2, color='b')
+        #lambda_levels = row['D_LAB_serum_lambda']
+        #ax1.plot(date, lambda_levels, linestyle='', marker='x', zorder=2, color='r')
     
     # Plot the drugs  ##########################################
     for index, row in df_drugs_and_dates.loc[df_drugs_and_dates['PUBLIC_ID'] == PUBLIC_ID].iterrows():
         # Plot treatments
-        treat_dates = np.array([row['startday'], row['stopday']])
+        treat_dates = np.array([row['startday'], row['stopday']]) - (1970)*365
     
         # First drug entry: Treatments that last more than 1 day 
         drug_interval_1 = treat_dates[0:2] # For the first drug combination
@@ -566,7 +566,7 @@ def plot_patient(PUBLIC_ID):
 
     # end and save plot:
     ax1.set_title("Patient ID " + str(PUBLIC_ID))
-    ax1.set_xlabel("Time (year)")
+    ax1.set_xlabel("Years after diagnosis")
     ax1.set_ylabel("Serum Mprotein (g/dL)")
     ax1.set_ylim(bottom=0)
     ax2.set_ylabel("Drug")
@@ -590,7 +590,7 @@ patient_output = [plot_patient(public_id) for public_id in unique_PUBLIC_IDs]
 counts_mprotein, counts_treatments, counts_inclusion_criteria_satisfied = [[pat_out[iii] for pat_out in patient_output] for iii in [0,1,2]]
 
 print("There are "+str(sum(counts_inclusion_criteria_satisfied))+" patients that satisfy the criteria for inclusion.")
-
+qsqs
 # Histogram of number of M protein measurements 
 plt.figure()
 plt.hist(counts_mprotein, bins = max(counts_mprotein)+1) #mprotein counts
@@ -634,7 +634,7 @@ for row_index in range(len(df_mprotein_and_dates)):
     # If it's a new patient, then save plot and initialize new figure with new PUBLIC_ID
     if not (df_mprotein_and_dates.loc[row_index,['PUBLIC_ID']][0] == PUBLIC_ID):
         ax1.set_title("Patient ID " + str(PUBLIC_ID))
-        ax1.set_xlabel("Time (year)")
+        ax1.set_xlabel("Time after diagnosis (years)")
         ax1.set_ylabel("Serum Mprotein (g/dL)")
         ax1.set_ylim(bottom=0)
         ax2.set_ylabel("Treatment line")
@@ -708,7 +708,7 @@ for row_index in range(len(df_mprotein_and_dates)):
     ax1.plot(dates, mprotein_levels, linestyle='', marker='x', zorder=3, color='k')
 
 ax1.set_title("Patient ID " + str(PUBLIC_ID))
-ax1.set_xlabel("Time (year)")
+ax1.set_xlabel("Time after diagnosis (years)")
 ax1.set_ylabel("Serum Mprotein (g/dL)")
 ax1.set_ylim(bottom=0)
 ax2.set_ylabel("Treatment line")

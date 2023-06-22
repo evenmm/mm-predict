@@ -15,7 +15,7 @@ picklefile.close()
 # load Y (parameters)
 picklefile = open('./binaries_and_pickles/Y_parameters', 'rb')
 Y_parameters = pickle.load(picklefile)
-Y_parameters = [elem.to_prediction_array_composite_g_s_and_K_1()[0] for elem in Y_parameters]
+Y_parameters = [elem.to_prediction_array_composite_g_s_and_K_1() for elem in Y_parameters]
 Y_parameters = np.array(Y_parameters)
 print("Number of intervals:", len(Y_parameters))
 #plt.hist(Y_parameters[:,0]) # Half mixture params zero, half nonzero. Interesting! (Must address how sensitive sensitive are too)
@@ -40,7 +40,30 @@ random_forest_model = RandomForestRegressor(n_estimators=1000, random_state=rand
 
 r2score_train_array = []
 r2score_test_array = []
-print("Training and testing")
+
+def sort_by_test(pred_in, test_in, index):
+    # index 0: pi_r. index 1: g_r
+    compare = [[pred_in[ii], test_in[ii]] for ii, elem in enumerate(test_in)]
+    sorted_compare = Sort(compare)
+    pred_array = [elem[0] for elem in sorted_compare]
+    truth_array = [elem[1] for elem in sorted_compare]
+    return pred_array, truth_array
+
+def make_figure(pred_array, truth_array, name, TRAIN=True):
+    plt.figure()
+    plt.scatter(range(len(pred_array)), truth_array, c="navy", s=s, edgecolor="black", label="Step 1: Estimate")
+    plt.scatter(range(len(pred_array)), pred_array, c="red", s=s, edgecolor="black", label="Step 2: Prediction")
+    plt.xlabel("Sorted by true "+name)
+    plt.ylabel(name+": Fraction resistant cells")
+    plt.legend(loc="best")
+    if TRAIN:
+        plt.title("Train data: Compare truth and predictions")
+        plt.savefig("./plots/diagnostics_train_"+name+"_estimate_compared_to_truth.png")
+    else: 
+        plt.title("Test data: Compare truth and predictions")
+        plt.savefig("./plots/diagnostics_test_"+name+"_estimate_compared_to_truth.png")
+    plt.show()
+    plt.close()
 
 def train_random_forest(args):
     df_X_covariates, Y_outcome, i = args
@@ -53,169 +76,89 @@ def train_random_forest(args):
     r2score_test = r2_score(y_test, y_pred)
     return (r2score_train, r2score_test, X_full_train, X_full_test, y_train, y_test, y_pred, y_pred_train)
 
-all_random_states = range(50)
-args = [(df_X_covariates, Y_parameters, i) for i in all_random_states]
-with Pool(15) as pool:
-    results = pool.map(train_random_forest, args)
+def estimate_single_parameter_and_plot(parameter_position, variable_name):
+    print("\nTraining and testing")
+    print("Variable: "+variable_name)
+    Y_pi = [elem[parameter_position] for elem in Y_parameters]
+    all_random_states = range(50)
+    args = [(df_X_covariates, Y_pi, i) for i in all_random_states]
+    with Pool(15) as pool:
+        results = pool.map(train_random_forest, args)
 
+    r2score_train_array = [elem[0] for elem in results]
+    r2score_test_array = [elem[1] for elem in results]
+    X_full_train_array = [elem[2] for elem in results]
+    X_full_test_array = [elem[3] for elem in results]
+    y_train_array = [elem[4] for elem in results]
+    y_test_array = [elem[5] for elem in results]
+    y_pred_array = [elem[6] for elem in results]
+    y_pred_train_array = [elem[7] for elem in results]
 
-r2score_train_array = [elem[0] for elem in results]
-r2score_test_array = [elem[1] for elem in results]
-X_full_train_array = [elem[2] for elem in results]
-X_full_test_array = [elem[3] for elem in results]
-y_train_array = [elem[4] for elem in results]
-y_test_array = [elem[5] for elem in results]
-y_pred_array = [elem[6] for elem in results]
-y_pred_train_array = [elem[7] for elem in results]
+    y_test = y_test_array[-1]
+    y_train = y_train_array[-1]
+    y_pred = y_pred_array[-1]
+    y_pred_train = y_pred_train_array[-1]
 
-y_test = y_test_array[-1]
-y_train = y_train_array[-1]
-y_pred = y_pred_array[-1]
-y_pred_train = y_pred_train_array[-1]
+    print("Average R2 score train:", np.mean(r2score_train_array), "std:", np.std(r2score_train_array))
+    print("Average R2 score test:", np.mean(r2score_test_array), "std:", np.std(r2score_test_array))
 
-#for ii in range(50):
-#    X_full_train, X_full_test, y_train, y_test = train_test_split(df_X_covariates, Y_parameters, test_size=.4, random_state=ii+randomnumberr)
-#    random_forest_model.fit(X_full_train, y_train)
-#    y_pred = random_forest_model.predict(X_full_test)
-#    y_pred_train = random_forest_model.predict(X_full_train)
-#    r2score_train_array.append(r2_score(y_train, y_pred_train))
-#    r2score_test_array.append(r2_score(y_test, y_pred))
+    compare_array = [[y_pred[ii], y_test[ii]] for ii, elem in enumerate(y_test)]
+    compare_array = Sort(compare_array)
+    compare_array_pred = [elem[0] for elem in compare_array]
+    compare_array_test = [elem[1] for elem in compare_array]
 
-######################################################################
+    pred_array_train, truth_array_train = sort_by_test(y_pred_train, y_train, 0)
+    make_figure(pred_array_train, truth_array_train, variable_name, TRAIN=True)
+
+    pred_array_test, truth_array_test = sort_by_test(y_pred, y_test, 0)
+    make_figure(pred_array_test, truth_array_test, variable_name, TRAIN=False)
+
+    #########################
+    # Save things
+    #########################
+    picklefile = open('./binaries_and_pickles/random_forest_model_'+variable_name, 'wb')
+    pickle.dump(random_forest_model, picklefile)
+    picklefile.close()
+
+    picklefile = open('./binaries_and_pickles/X_test_array_learn_mapping_'+variable_name, 'wb')
+    pickle.dump(X_full_test_array, picklefile)
+    picklefile.close()
+
+    picklefile = open('./binaries_and_pickles/y_test_array_learn_mapping_'+variable_name, 'wb')
+    pickle.dump(y_test_array, picklefile)
+    picklefile.close()
+    return random_forest_model, X_full_test_array, y_test_array
+
+# pi_r
+random_forest_model_pi_r, X_full_test_array_pi_r, y_test_array_pi_r = estimate_single_parameter_and_plot(0, "pi_r")
 end_time = time.time()
 time_duration = end_time - start_time
 print("Time elapsed:", time_duration)
-print("Average R2 score train:", np.mean(r2score_train_array), "std:", np.std(r2score_train_array))
-print("Average R2 score test:", np.mean(r2score_test_array), "std:", np.std(r2score_test_array))
 
-# Print true and estimated
-#for index, elem in enumerate(y_pred):
-#    print(y_test[index][0], ":", y_pred[index][0])
-#    print(y_test[index][1], ":", y_pred[index][1])
-#    print(y_test[index][2], ":", y_pred[index][2], "\n")
+# g_r
+random_forest_model_g_r, X_full_test_array_g_r, y_test_array_g_r = estimate_single_parameter_and_plot(1, "g_r")
+end_time = time.time()
+time_duration = end_time - start_time
+print("Time elapsed:", time_duration)
 
-s = 25
-"""
-plt.figure()
-plt.scatter(y_test[:, 0], y_test[:, 1], c="navy", s=s, edgecolor="black", label="Step 1: Estimate")
-plt.scatter(y_pred[:, 0], y_pred[:, 1], c="red", s=s, edgecolor="black", label="Step 2: Prediction")
-#plt.xlim([-6, 6])
-#plt.ylim([-6, 6])
-plt.xlabel("pi_R: Fraction resistant cells")
-plt.ylabel("g_r")
-plt.title("Compare truth and predictions")
-plt.legend(loc="best")
-#plt.show()
-plt.close()
-"""
+# (g_s - K)
+random_forest_model_g_s, X_full_test_array_g_s, y_test_array_g_s = estimate_single_parameter_and_plot(2, "(g_s-K)")
+end_time = time.time()
+time_duration = end_time - start_time
+print("Time elapsed:", time_duration)
 
-compare_pi_r = [[y_pred[ii], y_test[ii]] for ii, elem in enumerate(y_test)]
-"""
-# These comparison lists of parameters contain pairs of (prediction, truth), sorted by truth, for plotting 
-compare_pi_r = [[y_pred[ii][0], y_test[ii][0]] for ii, elem in enumerate(y_test)]
-compare_g_r = [[y_pred[ii][1], y_test[ii][1]] for ii, elem in enumerate(y_test)]
-compare_g_s = [[y_pred[ii][2], y_test[ii][2]] for ii, elem in enumerate(y_test)]
-"""
 
-def sort_by_test(pred_in, test_in, index):
-    # index 0: pi_r. index 1: g_r
-    compare = [[pred_in[ii], test_in[ii]] for ii, elem in enumerate(test_in)]
-    sorted_compare = Sort(compare)
-    pred_array = [elem[0] for elem in sorted_compare]
-    test_array = [elem[1] for elem in sorted_compare]
-    return pred_array, test_array
-
-compare_pi_r = Sort(compare_pi_r)
-compare_pi_r_pred = [elem[0] for elem in compare_pi_r]
-compare_pi_r_test = [elem[1] for elem in compare_pi_r]
-
-"""
-compare_g_r = Sort(compare_g_r)
-compare_g_r_pred = [elem[0] for elem in compare_g_r]
-compare_g_r_test = [elem[1] for elem in compare_g_r]
-
-compare_g_s = Sort(compare_g_s)
-compare_g_s_pred = [elem[0] for elem in compare_g_s]
-compare_g_s_test = [elem[1] for elem in compare_g_s]
-"""
-
-def make_figure(pred_array, test_array, name):
-    plt.figure()
-    plt.scatter(range(len(pred_array)), test_array, c="navy", s=s, edgecolor="black", label="Step 1: Estimate")
-    plt.scatter(range(len(pred_array)), pred_array, c="red", s=s, edgecolor="black", label="Step 2: Prediction")
-    plt.xlabel("Sorted by true "+name)
-    plt.ylabel(name+": Fraction resistant cells")
-    plt.title("Train data: Compare truth and predictions")
-    plt.legend(loc="best")
-    plt.savefig("./plots/diagnostics_train_"+name+"_estimate_compared_to_truth.png")
-    plt.show()
-
-# pi_r, g_r, g_s
-#for iii in range(3):
-pred_array, test_array = sort_by_test(y_pred_train, y_train, 0)
-make_figure(pred_array, test_array, "pi_r")
-"""
-pred_array, test_array = sort_by_test(y_pred_train, y_train, 1)
-make_figure(pred_array, test_array, "g_r")
-pred_array, test_array = sort_by_test(y_pred_train, y_train, 2)
-make_figure(pred_array, test_array, "g_s")
-"""
-
-plt.figure()
-plt.scatter(range(len(compare_pi_r_test)), compare_pi_r_test, c="navy", s=s, edgecolor="black", label="Step 1: Estimate")
-plt.scatter(range(len(compare_pi_r_pred)), compare_pi_r_pred, c="red", s=s, edgecolor="black", label="Step 2: Prediction")
-plt.xlabel("Sorted by true pi_R")
-plt.ylabel("pi_R: Fraction resistant cells")
-plt.title("Compare truth and predictions")
-plt.legend(loc="best")
-plt.savefig("./plots/diagnostics_pi_R_estimate_compared_to_truth.png")
-plt.show()
-"""
-
-plt.figure()
-plt.scatter(range(len(compare_g_r_test)), compare_g_r_test, c="navy", s=s, edgecolor="black", label="Step 1: Estimate")
-plt.scatter(range(len(compare_g_r_pred)), compare_g_r_pred, c="red", s=s, edgecolor="black", label="Step 2: Prediction")
-plt.xlabel("Sorted by true g_r")
-plt.ylabel("g_r: Growth rate of resistant cells")
-plt.title("Compare truth and predictions")
-plt.legend(loc="best")
-plt.savefig("./plots/diagnostics_g_r_estimate_compared_to_truth.png")
-plt.show()
-
-plt.figure()
-plt.scatter(range(len(compare_g_s_test)), compare_g_s_test, c="navy", s=s, edgecolor="black", label="Step 1: Estimate")
-plt.scatter(range(len(compare_g_s_pred)), compare_g_s_pred, c="red", s=s, edgecolor="black", label="Step 2: Prediction")
-plt.xlabel("Sorted by true g_s")
-plt.ylabel("g_s: Growth rate of resistant cells")
-plt.title("Compare truth and predictions")
-plt.legend(loc="best")
-plt.savefig("./plots/diagnostics_g_s_estimate_compared_to_truth.png")
-plt.show()
-
-# Use latest M protein as Y_0 
-#for training_instance_id in training_instance_id_list:
-# iterate the patient names in X_full_test:
-##for index, row in extracted_features.iterrows():
-#    training_instance_id = row['training_instance_id']
-#    PUBLIC_ID = row['PUBLIC_ID']
-#    patient = COMMPASS_patient_dictionary[PUBLIC_ID]
-#
-#    # Plot estimated compared to true... parameters? No, M protein values 
-#    estimated_parameters = y[training_instance_id]
-#    predicted_parameters = y_pred[training_instance_id]
-#    savename = "./COMPASS_plot_comparisons/compare_predicted_with_estimated"+patient.name+".png"
-#    plot_to_compare_estimated_and_predicted_drug_dynamics(estimated_parameters, predicted_parameters, patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=patient.name, savename=savename)
-
-"""
-
-picklefile = open('./binaries_and_pickles/random_forest_model', 'wb')
-pickle.dump(random_forest_model, picklefile)
+# Test how the rnadom forest estimated parameters are at predicting the binary outcome
+# This is the truth
+picklefile = open('./binaries_and_pickles/Y_increase_or_not', 'rb')
+Y_increase_or_not = pickle.load(picklefile)
 picklefile.close()
 
-picklefile = open('./binaries_and_pickles/X_test_array_learn_mapping', 'wb')
-pickle.dump(X_full_test_array, picklefile)
-picklefile.close()
+# Take the test data, match it case by case to the truth. 
+# We only have 0 and 1, so we need a probabilistic model to do this
+# Take distribution of parameters
+# Get marginal posterior of M protein value after x months. This gives a probability that the value is above Y0. 
+# AUC of this probability and the fitted model on the true data 
+# If this beats the baseline ML model, then very very nice 
 
-picklefile = open('./binaries_and_pickles/y_test_array_learn_mapping', 'wb')
-pickle.dump(y_test_array, picklefile)
-picklefile.close()
+

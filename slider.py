@@ -1,5 +1,5 @@
 from utilities import *
-from matplotlib.widgets import Slider, Button, RadioButtons
+from matplotlib.widgets import Slider
 RANDOM_SEED = 499
 np.random.seed(RANDOM_SEED)
 rng = np.random.default_rng(RANDOM_SEED)
@@ -16,7 +16,7 @@ true_sigma_obs = 0
 M_number_of_measurements = 12
 N_patients = 150
 y_resolution = 80 # Number of timepoints to evaluate the posterior of y in
-max_time = 180
+max_time = 700
 days_between_measurements = int(max_time/M_number_of_measurements)
 measurement_times = days_between_measurements * np.linspace(0, M_number_of_measurements, M_number_of_measurements)
 treatment_history = np.array([Treatment(start=0, end=measurement_times[-1], id=1)])
@@ -59,9 +59,9 @@ ax_rho   = plt.axes([0.25, 0.07, 0.65, 0.03], facecolor=axcolor)
 ax_alpha = plt.axes([0.25, 0.02, 0.65, 0.03], facecolor=axcolor)
 #ax_Y_0 = plt.axes([0.25, 0.2, 0.65, 0.03], facecolor=axcolor)
 
-slide_pi    = Slider(ax_pi, r'$\pi $', 0, 1, valinit=parameters.pi_r[0])
-slide_rho   = Slider(ax_rho, r'$\rho $', 0, 10*parameters.g_r[0], valinit=parameters.g_r[0])
-slide_alpha = Slider(ax_alpha, r'$\alpha$', - 0.1, 0, valinit=parameters.g_s[0])
+slide_pi    = Slider(ax_pi, r'$\pi $', 0, 0.2, valinit=parameters.pi_r[0])
+slide_rho   = Slider(ax_rho, r'$\rho $', 0, parameters.g_r[0], valinit=parameters.g_r[0])
+slide_alpha = Slider(ax_alpha, r'$\alpha$', - 0.2, 0, valinit=parameters.g_s[0])
 #slide_Y_0 = Slider(ax_Y_0, 'Y_0', - 0.1, 0, valinit=parameters.Y_0[0])
 
 def update(val):

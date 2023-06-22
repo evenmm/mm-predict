@@ -170,6 +170,7 @@ for name, patient in COMMPASS_patient_dictionary.items():
                 # Check if period satisfies, if so then add it as a training case
                 # *Just check the current period instead of looping, it is faster*
                 # *Then remove treatment_id_list popping at end
+                # Currently the pop remains as there were duplicates: Now there is at most one case per patient
 
                 # Find periods of interest by looking through patient history 
                 period_start = np.nan

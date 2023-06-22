@@ -111,7 +111,7 @@ Add binary outcome to Y_increase_or_not
 for training_instance_id in range(N_patients):
     print("\n   Patient", str(training_instance_id))
     # Parameters at diagnosis
-    max_deviation = np.sqrt(0.8*(k_1_population - g_s_population))
+    max_deviation = np.sqrt(0.4*(k_1_population - g_s_population))
     gene_expression_X = np.random.uniform(-max_deviation, max_deviation) #np.random.normal(loc=0.0, scale=10*g_s_population)
     g_s_patient_i = g_s_population + gene_expression_X**2
     #gene_expression_X = 0.8*(k_1_population - g_s_population) * np.sqrt(np.random.uniform(0,1)) #np.random.normal(loc=0.0, scale=10*g_s_population)

@@ -148,5 +148,6 @@ def sample_from_full_model(X, patient_dictionary, name, N_samples=3000, N_tuning
             trace = approx.sample(draws=5000)
             idata = trace # Valid?                        
         else: # if method == "HMC"
-            idata = pm.sample(N_samples, tune=N_tuning, random_seed=42, target_accept=target_accept, max_treedepth=max_treedepth)
+            # init = "advi", "advi+adapt_diag"
+            idata = pm.sample(draws=N_samples, init="advi+adapt_diag", tune=N_tuning, random_seed=42, target_accept=target_accept, max_treedepth=max_treedepth)
     return idata

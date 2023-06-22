@@ -9,7 +9,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 # X is an (N_patients, P) shaped pandas dataframe
 # patient dictionary contains N_patients patients in the same order as X
 
-def partial_BNN_model(map_estimate, X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False, n_hidden = 3, net_list=["pi", "rho_r", "rho_s"]):
+def partial_BNN_model(map_estimate, X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False, n_hidden = 3, net_list=["pi", "rho_r", "rho_s"], empirical_mean_alpha=[]):
     df = pd.DataFrame(columns=["patient_id", "mprotein_value", "time"])
     for ii in range(len(patient_dictionary)):
         patient = patient_dictionary[ii]
@@ -38,7 +38,11 @@ def partial_BNN_model(map_estimate, X, patient_dictionary, name, psi_prior="logn
         sigma_obs = pm.HalfNormal("sigma_obs", sigma=1)
 
         # alpha
-        alpha = pm.Normal("alpha",  mu=np.array([np.log(0.002), np.log(0.002), np.log(0.5/(1-0.5))]),  sigma=1, shape=3)
+        if len(empirical_mean_alpha) < 3:
+            alpha = pm.Normal("alpha", mu=np.array([np.log(0.002), np.log(0.002), np.log(0.5/(1-0.5))]),  sigma=1, shape=3)
+        else: 
+            print("Using empirical_mean_alpha as prior for alpha")
+            alpha = pm.Normal("alpha",  mu=np.array([np.log(-empirical_mean_alpha[0]), np.log(empirical_mean_alpha[1]), np.log(empirical_mean_alpha[2]/(1-empirical_mean_alpha[2]))]),  sigma=1, shape=3)
 
         log_sigma_weights_in = pm.Normal("log_sigma_weights_in", mu=2*np.log(0.01), sigma=2.5**2, shape=(X.shape[0], 1))
         sigma_weights_in = pm.Deterministic("sigma_weights_in", pm.math.exp(log_sigma_weights_in))
@@ -66,7 +70,6 @@ def partial_BNN_model(map_estimate, X, patient_dictionary, name, psi_prior="logn
                 else: 
                     weights_in_rho_s = pm.Normal('weights_in_rho_s', 0, sigma=np.repeat(sigma_weights_in, n_hidden, axis=1), shape=(X.shape[0], n_hidden), initval=init_1)
             # Weights from 1st to 2nd layer
-            #weights_out_rho_s_offset = map_estimate["weights_out_rho_s_offset"]
             weights_out_rho_s = map_estimate["weights_out_rho_s"]
 
             # offsets for each node between each layer 
@@ -101,7 +104,6 @@ def partial_BNN_model(map_estimate, X, patient_dictionary, name, psi_prior="logn
                 else: 
                     weights_in_rho_r = pm.Normal('weights_in_rho_r', 0, sigma=np.repeat(sigma_weights_in, n_hidden, axis=1), shape=(X.shape[0], n_hidden), initval=init_1)
             # Weights from 1st to 2nd layer
-            #weights_out_rho_r_offset = map_estimate["weights_out_rho_r_offset"]
             weights_out_rho_r = map_estimate["weights_out_rho_r"]
 
             bias_in_rho_r = pm.Normal("bias_in_rho_r", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_r

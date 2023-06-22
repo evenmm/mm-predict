@@ -99,7 +99,7 @@ def sample_from_BNN_model_advi(X, patient_dictionary, name, N_samples=5000, N_ad
             weights_out_pi_r = pm.Normal('weights_out_pi_r', 0, sigma=sigma_weights, shape=(n_hidden, ), initval=init_out) # sigma=sigma_weights_out_pi_r
         # Original was with all sigma_weights = 1 
         
-        # offsets for each node between each layer 
+        # intercepts for each node between each layer 
         sigma_bias = pm.HalfNormal("sigma_bias", sigma=1, shape=(1,n_hidden))
         #sigma_bias_in_rho_s = pm.HalfNormal("sigma_bias_in_rho_s", sigma=1, shape=(1,n_hidden))
         #sigma_bias_in_rho_r = pm.HalfNormal("sigma_bias_in_rho_r", sigma=1, shape=(1,n_hidden))
@@ -107,8 +107,13 @@ def sample_from_BNN_model_advi(X, patient_dictionary, name, N_samples=5000, N_ad
         bias_in_rho_s = pm.Normal("bias_in_rho_s", mu=0, sigma=sigma_bias, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_s
         bias_in_rho_r = pm.Normal("bias_in_rho_r", mu=0, sigma=sigma_bias, shape=(1,n_hidden)) # sigma=sigma_bias_in_rho_r
         bias_in_pi_r = pm.Normal("bias_in_pi_r", mu=0, sigma=sigma_bias, shape=(1,n_hidden)) # sigma=sigma_bias_in_pi_r
+        # Should include this! 
+        #bias_out_rho_s = pm.Normal("bias_out_rho_s", mu=0, sigma=sigma_bias, shape=1)
+        #bias_out_rho_r = pm.Normal("bias_out_rho_r", mu=0, sigma=sigma_bias, shape=1)
+        #bias_out_pi_r = pm.Normal("bias_out_pi_r", mu=0, sigma=sigma_bias, shape=1)
 
-        # Leaky RELU
+        # Calculate Y using neural net 
+        # Leaky RELU activation
         pre_act_1_rho_s = pm.math.dot(X_not_transformed, weights_in_rho_s) + bias_in_rho_s
         pre_act_1_rho_r = pm.math.dot(X_not_transformed, weights_in_rho_r) + bias_in_rho_r
         pre_act_1_pi_r = pm.math.dot(X_not_transformed, weights_in_pi_r) + bias_in_pi_r
@@ -117,12 +122,17 @@ def sample_from_BNN_model_advi(X, patient_dictionary, name, N_samples=5000, N_ad
         act_1_pi_r = pm.math.switch(pre_act_1_pi_r > 0, pre_act_1_pi_r, pre_act_1_pi_r * 0.01)
 
         # Output activation function is just unit transform for prediction model
-        act_out_rho_s = pm.math.dot(act_1_rho_s, weights_out_rho_s)
-        act_out_rho_r = pm.math.dot(act_1_rho_r, weights_out_rho_r)
-        act_out_pi_r = pm.math.dot(act_1_pi_r, weights_out_pi_r)
+        act_out_rho_s = pm.math.dot(act_1_rho_s, weights_out_rho_s) #+ bias_out_rho_s
+        act_out_rho_r = pm.math.dot(act_1_rho_r, weights_out_rho_r) #+ bias_out_rho_r
+        act_out_pi_r = pm.math.dot(act_1_pi_r, weights_out_pi_r) #+ bias_out_pi_r
 
         # Latent variables theta
         omega = pm.HalfNormal("omega",  sigma=1, shape=3) # Patient variability in theta (std)
+        ## Without random effects:
+        #theta_rho_s = pm.Deterministic("theta_rho_s", (alpha[0] + act_out_rho_s))
+        #theta_rho_r = pm.Deterministic("theta_rho_r", (alpha[1] + act_out_rho_r))
+        #theta_pi_r  = pm.Deterministic("theta_pi_r",  (alpha[2] + act_out_pi_r))
+        # Original: 
         if FUNNEL_REPARAMETRIZATION == True: 
             # Reparametrized to escape/explore the funnel of Hell (https://twiecki.io/blog/2017/02/08/bayesian-hierchical-non-centered/):
             theta_rho_s_offset = pm.Normal('theta_rho_s_offset', mu=0, sigma=1, shape=N_patients)

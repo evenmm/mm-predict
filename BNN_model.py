@@ -9,7 +9,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 # X is an (N_patients, P) shaped pandas dataframe
 # patient dictionary contains N_patients patients in the same order as X
 
-def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False, n_hidden = 3, net_list=["pi", "rho_r", "rho_s"]):
+def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False, n_hidden = 3, net_list=["pi", "rho_r", "rho_s"], empirical_mean_alpha=[]):
     df = pd.DataFrame(columns=["patient_id", "mprotein_value", "time"])
     for ii in range(len(patient_dictionary)):
         patient = patient_dictionary[ii]
@@ -42,9 +42,13 @@ def BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_E
         sigma_obs = pm.HalfNormal("sigma_obs", sigma=1)
 
         # alpha
-        alpha = pm.Normal("alpha",  mu=np.array([np.math.log(0.002), np.math.log(0.002), np.math.log(0.5/(1-0.5))]),  sigma=1, shape=3)
+        if len(empirical_mean_alpha) < 3:
+            alpha = pm.Normal("alpha",  mu=np.array([np.log(0.002), np.log(0.002), np.log(0.5/(1-0.5))]),  sigma=1, shape=3)
+        else: 
+            print("Using empirical_mean_alpha as prior for alpha")
+            alpha = pm.Normal("alpha",  mu=np.array([np.log(-empirical_mean_alpha[0]), np.log(empirical_mean_alpha[1]), np.log(empirical_mean_alpha[2]/(1-empirical_mean_alpha[2]))]),  sigma=1, shape=3)
 
-        log_sigma_weights_in = pm.Normal("log_sigma_weights_in", mu=2*np.math.log(0.01), sigma=2.5**2, shape=(X.shape[0], 1))
+        log_sigma_weights_in = pm.Normal("log_sigma_weights_in", mu=2*np.log(0.01), sigma=2.5**2, shape=(X.shape[0], 1))
         sigma_weights_in = pm.Deterministic("sigma_weights_in", pm.math.exp(log_sigma_weights_in))
         sigma_weights_out = pm.HalfNormal("sigma_weights_out", sigma=0.1)
         sigma_bias_in = pm.HalfNormal("sigma_bias_in", sigma=1, shape=(1,n_hidden))

@@ -8,31 +8,47 @@ rng = np.random.default_rng(RANDOM_SEED)
 # Function argument shapes: 
 # X is an (N_patients, P) shaped pandas dataframe
 # patient dictionary contains N_patients patients in the same order as X
-def joint_BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False, n_hidden = 3):
+def joint_BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RANDOM_EFFECTS=True, FUNNEL_REPARAMETRIZATION=False, FUNNEL_WEIGHTS = False, WEIGHT_PRIOR = "symmetry_fix", SAVING=False, n_hidden = 3, net_list=["pi", "rho_r", "rho_s"]):
+    df = pd.DataFrame(columns=["patient_id", "mprotein_value", "time"])
+    for ii in range(len(patient_dictionary)):
+        patient = patient_dictionary[ii]
+        mprot = patient.Mprotein_values
+        times = patient.measurement_times
+        for jj in range(len(mprot)):
+            single_entry = pd.DataFrame({"patient_id":[ii], "mprotein_value":[mprot[jj]], "time":[times[jj]]})
+            df = pd.concat([df, single_entry], ignore_index=True)
+    group_id = df["patient_id"].tolist()
+    Y_flat_no_nans = np.array(df["mprotein_value"].tolist())
+    t_flat_no_nans = np.array(df["time"].tolist())
+
     N_patients, P = X.shape
     P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
     X_not_transformed = X.copy()
     X = X.T
     #Y = np.transpose(np.array([patient.Mprotein_values for _, patient in patient_dictionary.items()]))
     #t = np.transpose(np.array([patient.measurement_times for _, patient in patient_dictionary.items()]))
-    Y = np.empty((N_patients, max([len(patient.Mprotein_values) for _, patient in patient_dictionary.items()])))
-    Y[:] = np.nan 
-    for ii, mprot in enumerate([patient.Mprotein_values for _, patient in patient_dictionary.items()]):
-        Y[ii,0:len(mprot)] = mprot
-    Y = np.transpose(Y)
+    #Y = np.empty((N_patients, max([len(patient.Mprotein_values) for _, patient in patient_dictionary.items()])))
+    #Y[:] = np.nan 
+    #for ii, mprot in enumerate([patient.Mprotein_values for _, patient in patient_dictionary.items()]):
+    #    Y[ii,0:len(mprot)] = mprot
+    #Y = np.transpose(Y)
 
-    t = np.empty((N_patients, max([len(patient.measurement_times) for _, patient in patient_dictionary.items()])))
-    t[:] = np.nan 
-    for ii, mtimes in enumerate([patient.measurement_times for _, patient in patient_dictionary.items()]):
-        t[ii,0:len(mtimes)] = mtimes
-    t = np.transpose(t)
-    assert t.shape == Y.shape
-    yi0 = np.maximum(1e-5, np.array([patient.Mprotein_values[0] for _, patient in patient_dictionary.items()]))
+    #t = np.empty((N_patients, max([len(patient.measurement_times) for _, patient in patient_dictionary.items()])))
+    #t[:] = np.nan 
+    #for ii, mtimes in enumerate([patient.measurement_times for _, patient in patient_dictionary.items()]):
+    #    t[ii,0:len(mtimes)] = mtimes
+    #t = np.transpose(t)
+    #assert t.shape == Y.shape
+
+    yi0 = np.zeros(N_patients)
+    for ii in range(N_patients):
+        yi0[ii] = patient_dictionary[ii].Mprotein_values[0]
+    assert yi0.min() > 0, "Initial M protein values yi0 must be positive due to lognormal prior on psi"
     # Dimensions: 
     # X: (P, N_cases)
     # y: (M_max, N)
     # t: (M_max, N)
-
+    """
     viz_Y = Y[Y<250]
     plt.figure()
     sns.distplot(Y, hist=True, kde=True, 
@@ -50,6 +66,7 @@ def joint_BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RA
     if SAVING:
         plt.savefig("./plots/posterior_plots/"+name+"-plot_density_lessthan_250.png")
     plt.close
+    """
     if psi_prior not in ["lognormal", "normal"]:
         print("Unknown prior option specified for psi; Using 'lognormal' prior")
         psi_prior = "lognormal"
@@ -57,10 +74,10 @@ def joint_BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RA
     # Initialize random weights between each layer
     init_1 = np.random.randn(X.shape[0], n_hidden)
     if WEIGHT_PRIOR == "iso_normal":
-        init_out = np.random.randn(n_hidden)
+        init_out = np.random.randn(n_hidden,3)
     else:
         #init_out = np.random.exponential(lam=10, size=n_hidden) # scale=0.1
-        init_out = abs(np.random.randn(n_hidden))
+        init_out = abs(np.random.randn(n_hidden,3))
 
     with pm.Model(coords={"predictors": X_not_transformed.columns.values}) as neural_net_model:
         # Observation noise (std)
@@ -126,16 +143,13 @@ def joint_BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RA
         sigma_bias_in = pm.HalfNormal("sigma_bias_in", sigma=1, shape=(1,n_hidden))
         bias_in = pm.Normal("bias_in", mu=0, sigma=sigma_bias_in, shape=(1,n_hidden)) # sigma=sigma_bias_in
         
-        sigma_bias_out = pm.HalfNormal("sigma_bias_out", sigma=1)
-        bias_out = pm.Normal("bias_out", mu=0, sigma=sigma_bias_out, shape=3)
-
         # Calculate Y using neural net 
         # Leaky RELU activation
         pre_act_1 = pm.math.dot(X_not_transformed, weights_in) + bias_in
         act_1 = pm.math.switch(pre_act_1 > 0, pre_act_1, pre_act_1 * 0.01)
 
         # Output activation function is just unit transform for prediction model
-        act_out = pm.math.dot(act_1, weights_out) + bias_out
+        act_out = pm.math.dot(act_1, weights_out)
 
         # Latent variables theta
         omega = pm.HalfNormal("omega",  sigma=1, shape=3) # Patient variability in theta (std)
@@ -174,18 +188,20 @@ def joint_BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RA
         pi_r  = pm.Deterministic("pi_r", 1/(1+np.exp(-theta_pi_r)))
 
         # Observation model 
-        mu_Y = psi * (pi_r*np.exp(rho_r*t) + (1-pi_r)*np.exp(rho_s*t))
+        #mu_Y = psi * (pi_r*np.exp(rho_r*t) + (1-pi_r)*np.exp(rho_s*t))
 
         # Likelihood (sampling distribution) of observations
         # Check for nan in Y and t; and only use 
-        mu_Y = mu_Y[~np.isnan(t)]
-        Y_obs = pm.Normal("Y_obs", mu=mu_Y, sigma=sigma_obs, observed=Y[~np.isnan(t)])
+        #mu_Y = mu_Y[~np.isnan(t)]
+        mu_Y = psi[group_id] * (pi_r[group_id]*pm.math.exp(rho_r[group_id]*t_flat_no_nans) + (1-pi_r[group_id])*pm.math.exp(rho_s[group_id]*t_flat_no_nans))
+        #Y_obs = pm.Normal("Y_obs", mu=mu_Y, sigma=sigma_obs, observed=Y[~np.isnan(t)])
         #Y_obs = pm.Normal("Y_obs", mu=mu_Y, sigma=sigma_obs, observed=Y)
     # Visualize model
     #import graphviz 
     #gv = pm.model_to_graphviz(neural_net_model) # With shared vcariables: --> 170 assert force_compile or (version == get_version())   AssertionError.
     #gv.render(filename="./plots/posterior_plots/"+name+"_graph_of_model", format="png", view=False)
     # Sample from prior:
+    """
     with neural_net_model:
         prior_samples = pm.sample_prior_predictive(200)
     raveled_Y_true = np.ravel(Y)
@@ -211,4 +227,5 @@ def joint_BNN_model(X, patient_dictionary, name, psi_prior="lognormal", MODEL_RA
     if SAVING:
         plt.savefig("./plots/posterior_plots/"+name+"-plot_prior_samples.png")
     plt.close()
+    """
     return neural_net_model
