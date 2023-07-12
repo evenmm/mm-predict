@@ -8,7 +8,7 @@ rng = np.random.default_rng(RANDOM_SEED)
 # Function argument shapes: 
 # patient dictionary contains N_patients patients
 
-def individual_model(patient_dictionary, name, N_samples=3000, N_tuning=3000, target_accept=0.99, max_treedepth=10, psi_prior="lognormal", FUNNEL_REPARAMETRIZATION=False, method="HMC"):
+def individual_model(patient_dictionary, name, target_accept=0.99, max_treedepth=10, psi_prior="lognormal", FUNNEL_REPARAMETRIZATION=False, method="HMC"):
     df = pd.DataFrame(columns=["patient_id", "mprotein_value", "time"])
     for ii in range(len(patient_dictionary)):
         patient = patient_dictionary[ii]
@@ -24,6 +24,10 @@ def individual_model(patient_dictionary, name, N_samples=3000, N_tuning=3000, ta
     assert len(Y_flat_no_nans) > 0, "No measurements found"
     assert min(Y_flat_no_nans) >= 0, "M protein values must be non-negative"
     assert min(t_flat_no_nans) >= 0, "Time values must be non-negative"
+
+    #print("group_id", group_id)
+    #print("Y_flat_no_nans", Y_flat_no_nans)
+    #print("t_flat_no_nans", t_flat_no_nans)
 
     N_patients = len(patient_dictionary)
     yi0 = np.zeros(N_patients)
@@ -54,9 +58,9 @@ def individual_model(patient_dictionary, name, N_samples=3000, N_tuning=3000, ta
             theta_pi_r  = pm.Deterministic("theta_pi_r",  alpha[2] + theta_pi_r_offset  * omega[2])
         else: 
             # Original
-            theta_rho_s = pm.Normal("theta_rho_s", mu= alpha[0], sigma=omega[0])
-            theta_rho_r = pm.Normal("theta_rho_r", mu= alpha[1], sigma=omega[1])
-            theta_pi_r  = pm.Normal("theta_pi_r",  mu= alpha[2], sdigma=omega[2])
+            theta_rho_s = pm.Normal("theta_rho_s", mu= alpha[0], sigma=omega[0], shape=N_patients)
+            theta_rho_r = pm.Normal("theta_rho_r", mu= alpha[1], sigma=omega[1], shape=N_patients)
+            theta_pi_r  = pm.Normal("theta_pi_r",  mu= alpha[2], sigma=omega[2], shape=N_patients)
 
         # psi: True M protein at time 0
         # 1) Normal. Fast convergence, but possibly negative tail 
@@ -77,4 +81,18 @@ def individual_model(patient_dictionary, name, N_samples=3000, N_tuning=3000, ta
 
         # Likelihood (sampling distribution) of observations
         Y_obs = pm.Normal("Y_obs", mu=mu_Y, sigma=sigma_obs, observed=Y_flat_no_nans)
+
+        prior_samples = pm.sample_prior_predictive(200)
+        raveled_Y_true = np.ravel(Y_flat_no_nans) #+np.random.randn(len(Y_flat_no_nans))
+        raveled_Y_sample = np.ravel(prior_samples.prior_predictive["Y_obs"])
+        plt.figure()
+        az.plot_dist(raveled_Y_true, color="C1", label="observed", bw=1)
+        az.plot_dist(raveled_Y_sample, label="simulated", bw=1)
+        plt.title("Samples from prior compared to observations")
+        plt.xlabel("Y (M protein)")
+        plt.ylabel("Frequency")
+        plt.savefig("./plots/prior_sample_individual.pdf", dpi=300)
+        #plt.show()
+        plt.close()
+
     return individual_model

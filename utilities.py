@@ -383,15 +383,16 @@ def measure_Mprotein_naive(params, measurement_times, treatment_history):
     return Mprotein_values
     #return params.Y_0 * params.pi_r * np.exp(params.g_r * measurement_times) + params.Y_0 * (1-params.pi_r) * np.exp((params.g_s - params.k_1) * measurement_times)
 
-def generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_local, P, get_expected_theta_from_X, true_omega, true_omega_for_psi, seed, RANDOM_EFFECTS, DIFFERENT_LENGTHS=True):
+def generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_local, P, get_expected_theta_from_X, true_omega, true_omega_for_psi, seed, RANDOM_EFFECTS, DIFFERENT_LENGTHS=True, USUBJID=False):
     np.random.seed(seed)
     #X_mean = np.repeat(0,P)
     #X_std = np.repeat(0.5,P)
     #X = np.random.normal(X_mean, X_std, size=(N_patients_local,P))
     X = np.random.uniform(-1, 1, size=(N_patients_local,P))
     X = pd.DataFrame(X, columns = ["Covariate "+str(ii+1) for ii in range(P)])
-
     expected_theta_1, expected_theta_2, expected_theta_3 = get_expected_theta_from_X(X)
+    if USUBJID:
+        X["USUBJID"] = ["Patient " + x for x in X.index.map(str)]
 
     # Set the seed again to make the random effects not change with P
     np.random.seed(seed+1)
@@ -430,7 +431,7 @@ def generate_simulated_patients(measurement_times, treatment_history, true_sigma
             M_ii = len(measurement_times)
         measurement_times_ii = measurement_times[:M_ii]
         this_patient = Patient(these_parameters, measurement_times_ii, treatment_history, name=str(training_instance_id))
-        patient_dictionary[training_instance_id] = this_patient
+        patient_dictionary["Patient " + str(training_instance_id)] = this_patient
         parameter_dictionary[training_instance_id] = these_parameters
         #plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=str(training_instance_id), savename="./plots/Bayes_simulated_data/"+str(training_instance_id)
     return X, patient_dictionary, parameter_dictionary, expected_theta_1, true_theta_rho_s, true_rho_s
@@ -760,7 +761,7 @@ def plot_posterior_confidence_intervals(training_instance_id, patient, sorted_pr
     #plt.show()
     plt.close()
 
-def plot_posterior_local_confidence_intervals(training_instance_id, patient, sorted_local_pred_y_values, parameters=[], PLOT_PARAMETERS=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000, n_chains=4, n_samples=1000, sorted_resistant_mprotein=[], PLOT_MEASUREMENTS = True, PLOT_RESISTANT=True):
+def plot_posterior_local_confidence_intervals(training_instance_id, patient, sorted_local_pred_y_values, parameters=[], PLOT_PARAMETERS=False, PLOT_TREATMENTS=False, plot_title="", savename="0", y_resolution=1000, n_chains=4, n_samples=1000, sorted_resistant_mprotein=[], PLOT_MEASUREMENTS = True, PLOT_RESISTANT=True, IS_TEST_PATIENT=False, CLIP_MPROTEIN_TIME=0):
     measurement_times = patient.get_measurement_times()
     treatment_history = patient.get_treatment_history()
     Mprotein_values = patient.get_Mprotein_values()
@@ -770,6 +771,9 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
     
     fig, ax1 = plt.subplots()
     ax1.patch.set_facecolor('none')
+
+    if IS_TEST_PATIENT:
+        ax1.axvline(CLIP_MPROTEIN_TIME, color="k", linewidth=1, linestyle="-", zorder=3.9)
 
     # Plot posterior confidence intervals for Resistant M protein
     # 95 % empirical confidence interval
@@ -811,7 +815,12 @@ def plot_posterior_local_confidence_intervals(training_instance_id, patient, sor
 
     # Plot M protein observations
     if PLOT_MEASUREMENTS == True:
-        ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=4, color='k', label="Observed M protein") #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
+        if IS_TEST_PATIENT:
+            ax1.plot(measurement_times[measurement_times<=CLIP_MPROTEIN_TIME], Mprotein_values[measurement_times<=CLIP_MPROTEIN_TIME], linestyle='', marker='x', zorder=4, color='k', label="Observed M protein")
+            ax1.plot(measurement_times[measurement_times>CLIP_MPROTEIN_TIME], Mprotein_values[measurement_times>CLIP_MPROTEIN_TIME], linestyle='', markersize=6, markeredgewidth=1.7, marker='x', zorder=3.99, color='k', label="Unobserved M protein")
+            ax1.plot(measurement_times[measurement_times>CLIP_MPROTEIN_TIME], Mprotein_values[measurement_times>CLIP_MPROTEIN_TIME], linestyle='', markersize=5.5, markeredgewidth=1, marker='x', zorder=4, color='whitesmoke', label="Unobserved M protein")
+        else: 
+            ax1.plot(measurement_times, Mprotein_values, linestyle='', marker='x', zorder=4, color='k', label="Observed M protein") #[ax1.axvline(time, color="k", linewidth=0.5, linestyle="-") for time in measurement_times]
 
     # Plot treatments
     if PLOT_TREATMENTS:
@@ -2025,3 +2034,222 @@ def get_sample_weights(args):
     mean_pi_r = np.mean(pi_r_values)
     sample_weights_pi_r = np.var(pi_r_values)
     return mean_rho_s, sample_weights_rho_s, mean_rho_r, sample_weights_rho_r,  mean_pi_r, sample_weights_pi_r
+
+# This is where we make sure the ii matches between X_train and train_dict: 
+def get_ii_indexed_subset_dict(raw_subset_df, full_dict): # Requires raw_subset_df with reset indices
+    new_dict= {}
+    for ii, row in raw_subset_df.iterrows():
+        patient_name = row["USUBJID"]
+        new_dict[ii] = full_dict[patient_name]
+    return new_dict
+
+def plot_fit_and_predictions(idata, patient_dictionary_full, N_patients_train, SAVEDIR, name, y_resolution, CLIP_MPROTEIN_TIME, CI_with_obs_noise=False, PLOT_RESISTANT=True):
+    sample_shape = idata.posterior['psi'].shape # [chain, n_samples, dim]
+    n_chains = sample_shape[0]
+    n_samples = sample_shape[1]
+    var_dimensions = sample_shape[2] # one per patient
+    # Posterior CI for train data
+    if CI_with_obs_noise:
+        if N_samples <= 10:
+            N_rand_obs_pred_train = 10000 # Number of observation noise samples to draw for each parameter sample
+        elif N_samples <= 100:
+            N_rand_obs_pred_train = 1000 # Number of observation noise samples to draw for each parameter sample
+        elif N_samples <= 1000:
+            N_rand_obs_pred_train = 100 # Number of observation noise samples to draw for each parameter sample
+        else:
+            N_rand_obs_pred_train = 10 # Number of observation noise samples to draw for each parameter sample
+    else:
+        N_rand_obs_pred_train = 1
+    print("Plotting posterior credible bands for all cases")
+    for ii, patient in patient_dictionary_full.items():
+        np.random.seed(ii) # Seeding the randomness in observation noise sigma
+        measurement_times = patient.get_measurement_times() 
+        treatment_history = patient.get_treatment_history()
+        first_time = min(measurement_times[0], treatment_history[0].start)
+        time_max = find_max_time(measurement_times)
+        plotting_times = np.linspace(first_time, time_max, y_resolution) #int((measurement_times[-1]+1)*10))
+        posterior_parameters = np.empty(shape=(n_chains, n_samples), dtype=object)
+        predicted_y_values = np.empty(shape=(n_chains, n_samples*N_rand_obs_pred_train, y_resolution))
+        predicted_y_resistant_values = np.empty_like(predicted_y_values)
+        for ch in range(n_chains):
+            for sa in range(n_samples):
+                this_sigma_obs = np.ravel(idata.posterior['sigma_obs'][ch,sa])
+                this_psi       = np.ravel(idata.posterior['psi'][ch,sa,ii])
+                this_pi_r      = np.ravel(idata.posterior['pi_r'][ch,sa,ii])
+                this_rho_s     = np.ravel(idata.posterior['rho_s'][ch,sa,ii])
+                this_rho_r     = np.ravel(idata.posterior['rho_r'][ch,sa,ii])
+                posterior_parameters[ch,sa] = Parameters(Y_0=this_psi, pi_r=this_pi_r, g_r=this_rho_r, g_s=this_rho_s, k_1=0, sigma=this_sigma_obs)
+                these_parameters = posterior_parameters[ch,sa]
+                resistant_parameters = Parameters((these_parameters.Y_0*these_parameters.pi_r), 1, these_parameters.g_r, these_parameters.g_s, these_parameters.k_1, these_parameters.sigma)
+                # Predicted total and resistant M protein
+                predicted_y_values_noiseless = measure_Mprotein_noiseless(these_parameters, plotting_times, treatment_history)
+                predicted_y_resistant_values_noiseless = measure_Mprotein_noiseless(resistant_parameters, plotting_times, treatment_history)
+                # Add noise and make the resistant part the estimated fraction of the observed value
+                if CI_with_obs_noise:
+                    for rr in range(N_rand_obs_pred_train):
+                        noise_array = np.random.normal(0, this_sigma_obs, y_resolution)
+                        noisy_observations = predicted_y_values_noiseless + noise_array
+                        predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] = np.array([max(0, value) for value in noisy_observations]) # 0 threshold
+                        predicted_y_resistant_values[ch, N_rand_obs_pred_train*sa + rr] = predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] * (predicted_y_resistant_values_noiseless/(predicted_y_values_noiseless + 1e-15))
+                else: 
+                    predicted_y_values[ch, sa] = predicted_y_values_noiseless
+                    predicted_y_resistant_values[ch, sa] = predicted_y_values[ch, sa] * (predicted_y_resistant_values_noiseless/(predicted_y_values_noiseless + 1e-15))
+        flat_pred_y_values = np.reshape(predicted_y_values, (n_chains*n_samples*N_rand_obs_pred_train,y_resolution))
+        sorted_local_pred_y_values = np.sort(flat_pred_y_values, axis=0)
+        flat_pred_resistant = np.reshape(predicted_y_resistant_values, (n_chains*n_samples*N_rand_obs_pred_train,y_resolution))
+        sorted_pred_resistant = np.sort(flat_pred_resistant, axis=0)
+        if ii < N_patients_train:
+            IS_TEST_PATIENT = False
+            savename = SAVEDIR+name+"_CI_patient_id_"+str(ii)+"_train.pdf"
+        else:
+            IS_TEST_PATIENT = True
+            savename = SAVEDIR+name+"_CI_patient_id_"+str(ii)+"_test.pdf"
+        plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_values, parameters=[], PLOT_PARAMETERS=False, PLOT_TREATMENTS=False, plot_title="Posterior CI for patient "+str(ii), savename=savename, y_resolution=y_resolution, n_chains=n_chains, n_samples=n_samples, sorted_resistant_mprotein=sorted_pred_resistant, PLOT_RESISTANT=PLOT_RESISTANT, IS_TEST_PATIENT=IS_TEST_PATIENT, CLIP_MPROTEIN_TIME=CLIP_MPROTEIN_TIME)
+    print("...done.")
+
+def predict_PFS_velocity_model(patient_dictionary_full, N_patients_train, CLIP_MPROTEIN_TIME, end_of_prediction_horizon):
+    N_patients_test = len(patient_dictionary_full) - N_patients_train
+    p_progression = []
+    ii_test = 0
+    for ii, patient in patient_dictionary_full.items():
+        if ii >= N_patients_train:
+            # Find the lowest limit to qualify as progression
+            lowest_Mprotein = min(patient.Mprotein_values[patient.measurement_times <= CLIP_MPROTEIN_TIME])
+            prev_mprot = patient.Mprotein_values[patient.measurement_times <= CLIP_MPROTEIN_TIME]
+            prev_times = patient.measurement_times[patient.measurement_times <= CLIP_MPROTEIN_TIME]
+            pfs_threshold = max(1.25*lowest_Mprotein, lowest_Mprotein + 0.5)
+            #print("lowest_Mprotein", lowest_Mprotein)
+            #print("prev_mprot", prev_mprot)
+            #print("prev_times", prev_times)
+            #print("pfs_threshold", pfs_threshold)
+            times = patient.measurement_times[patient.measurement_times > CLIP_MPROTEIN_TIME]
+            if len(times) < 1:
+                p_progression.append(-1)
+                ii_test = ii_test + 1
+            else: 
+                # Each measurement can have some observation noise with std 0.25
+                N_predictions = 1000
+                m_std = 0.5
+                np.random.seed(0)
+                noise_first = np.random.normal(loc=0, scale=m_std, size=N_predictions)
+                noise_second = np.random.normal(loc=0, scale=m_std, size=N_predictions)
+                m_first = prev_mprot[-2] + noise_first
+                m_second = prev_mprot[-1] + noise_second
+                m_velocity = (m_second - m_first) / (prev_times[-1] - prev_times[-2])
+                #print("m_velocity", m_velocity)
+                predicted_mprot_endtime = (m_second) + m_velocity * (end_of_prediction_horizon - prev_times[-1])
+                predicted_mprot_endtime = np.array([max(0, value) for value in predicted_mprot_endtime]) # 0 threshold
+                p_progression_this_patient = np.sum(predicted_mprot_endtime >= pfs_threshold) / N_predictions
+                p_progression.append(p_progression_this_patient)
+                #print("Patient ii", ii, "p_progression_this_patient:", p_progression_this_patient)
+                ii_test = ii_test + 1
+    assert int(ii_test) == N_patients_test
+    #print(p_progression)
+    return p_progression
+
+def predict_PFS_new(idata, patient_dictionary_full, N_patients_train, CLIP_MPROTEIN_TIME, end_of_prediction_horizon, CI_with_obs_noise=False, y_resolution=100):
+    sample_shape = idata.posterior['psi'].shape # [chain, n_samples, dim]
+    n_chains = sample_shape[0]
+    n_samples = sample_shape[1]
+    var_dimensions = sample_shape[2] # one per patient
+    # Posterior CI for train data
+    if CI_with_obs_noise:
+        if N_samples <= 10:
+            N_rand_obs_pred_train = 10000 # Number of observation noise samples to draw for each parameter sample
+        elif N_samples <= 100:
+            N_rand_obs_pred_train = 1000 # Number of observation noise samples to draw for each parameter sample
+        elif N_samples <= 1000:
+            N_rand_obs_pred_train = 100 # Number of observation noise samples to draw for each parameter sample
+        else:
+            N_rand_obs_pred_train = 10 # Number of observation noise samples to draw for each parameter sample
+    else:
+        N_rand_obs_pred_train = 1
+    N_patients_test = len(patient_dictionary_full) - N_patients_train
+    p_progression = [] #np.repeat(-1, repeats=N_patients_test)
+    ii_test = 0
+    for ii, patient in patient_dictionary_full.items():
+        if ii >= N_patients_train:
+            print("In predict_PFS_new, finding p(progression) for ii =", ii)
+            np.random.seed(ii) # Seeding the randomness in observation noise sigma
+            # Find the lowest limit to qualify as progression
+            lowest_Mprotein = min(patient.Mprotein_values[patient.measurement_times <= CLIP_MPROTEIN_TIME])
+            pfs_threshold = max(1.25*lowest_Mprotein, lowest_Mprotein + 0.5)
+            times = patient.measurement_times[patient.measurement_times > CLIP_MPROTEIN_TIME]
+            if len(times) < 1:
+                p_progression.append(-1)
+                ii_test = ii_test + 1
+            else: 
+                pat_hist = patient.treatment_history[0]
+                treatment_history = [Treatment(pat_hist.start, end_of_prediction_horizon, pat_hist.id)]
+                eval_times = np.linspace(CLIP_MPROTEIN_TIME, end_of_prediction_horizon, y_resolution) #find_max_time(times), y_resolution)
+                posterior_parameters = np.empty(shape=(n_chains, n_samples), dtype=object)
+                predicted_y_values = np.empty(shape=(n_chains, n_samples*N_rand_obs_pred_train, y_resolution))
+                for ch in range(n_chains):
+                    for sa in range(n_samples):
+                        this_sigma_obs = np.ravel(idata.posterior['sigma_obs'][ch,sa])
+                        this_psi       = np.ravel(idata.posterior['psi'][ch,sa,ii])
+                        this_pi_r      = np.ravel(idata.posterior['pi_r'][ch,sa,ii])
+                        this_rho_s     = np.ravel(idata.posterior['rho_s'][ch,sa,ii])
+                        this_rho_r     = np.ravel(idata.posterior['rho_r'][ch,sa,ii])
+                        posterior_parameters[ch,sa] = Parameters(Y_0=this_psi, pi_r=this_pi_r, g_r=this_rho_r, g_s=this_rho_s, k_1=0, sigma=this_sigma_obs)
+                        these_parameters = posterior_parameters[ch,sa]
+                        predicted_y_values_noiseless = measure_Mprotein_noiseless(these_parameters, eval_times, treatment_history)
+                        #print("Y_0", this_psi, "pi_r",this_pi_r, "g_r",this_rho_r, "g_s",this_rho_s)
+                        #print("predicted_y_values_noiseless", predicted_y_values_noiseless)
+                        #print(np.sum(predicted_y_values_noiseless >= pfs_threshold))
+                        # Add noise and make the resistant part the estimated fraction of the observed value
+                        if CI_with_obs_noise:
+                            for rr in range(N_rand_obs_pred_train):
+                                noise_array = np.random.normal(0, this_sigma_obs, y_resolution)
+                                noisy_observations = predicted_y_values_noiseless + noise_array
+                                predicted_y_values[ch, N_rand_obs_pred_train*sa + rr] = np.array([max(0, value) for value in noisy_observations]) # 0 threshold
+                        else: 
+                            predicted_y_values[ch, sa] = predicted_y_values_noiseless
+                # For each time point after clip, p(progression) is the percentage of trajectories above this point
+                #print(predicted_y_values.shape)
+                #print("sum(predicted_y_values < 0.0001)", np.sum(predicted_y_values < 0.0001))
+                N_predictions = n_chains*n_samples*N_rand_obs_pred_train
+                flat_pred_y_values = np.reshape(predicted_y_values, (N_predictions, y_resolution))
+                sorted_local_pred_y_values = np.sort(flat_pred_y_values, axis=0)
+                #print("sum(sorted_local_pred_y_values < 0.0001)", np.sum(sorted_local_pred_y_values < 0.0001))
+                #print(sorted_local_pred_y_values)
+                #print("sorted_local_pred_y_values above")
+                #print("flat_pred_y_values.shape", flat_pred_y_values.shape)
+                #print("sorted_local_pred_y_values.shape", sorted_local_pred_y_values.shape)
+                #print("N_predictions", N_predictions)
+                p_progression_each_time = [np.sum(sorted_local_pred_y_values[:,tt] >= pfs_threshold)/N_predictions for tt in range(y_resolution)]
+                p_progression.append(np.max(p_progression_each_time))
+                #print("p_progression_each_time", p_progression_each_time)
+                #print("p_progression", p_progression)
+                #print("N_predictions", N_predictions)
+                #print("ii", ii)
+                ii_test = ii_test + 1
+    assert int(ii_test) == N_patients_test
+    return p_progression
+
+def get_true_pfs_new(patient_dictionary_test, CLIP_MPROTEIN_TIME):
+    N_patients_test = len(patient_dictionary_test)
+    true_pfs = np.repeat(-1, repeats=N_patients_test)
+    for ii, patient in patient_dictionary_test.items():
+        patient = patient_dictionary_test[ii]
+        # Look for progression only in the time after clip
+        lowest_Mprotein = min(patient.Mprotein_values[patient.measurement_times <= CLIP_MPROTEIN_TIME])
+        mprot = patient.Mprotein_values[patient.measurement_times > CLIP_MPROTEIN_TIME]
+        times = patient.measurement_times[patient.measurement_times > CLIP_MPROTEIN_TIME]
+        # Old criteria: Going above the initial M protein level 
+        #recurrence_or_not[ii] = int( (mprot[1:][times[1:] < evaluation_time] > mprot[0]).any() )
+        # New criteria from https://www.myelomacentral.com/livingwithmm/multiple-myeloma-symptoms-and-diagnosis/glossary-multiple-myeloma-definitions 
+        # 25% increase in serum M-component with an absolute increase of at least 0.5 g/dL; 
+        # Loop through measurements and find first case 
+        for tt, time in enumerate(times): 
+            if mprot[tt] > lowest_Mprotein*1.25 and mprot[tt] - lowest_Mprotein > 0.5:
+                true_pfs[ii] = time
+                break
+            lowest_Mprotein = min(lowest_Mprotein, mprot[tt])
+    #print("True PFS", true_pfs)
+    #print("Average PFS among actual PFS", np.mean(true_pfs[true_pfs>0]))
+    #print("Std PFS among actual PFS", np.std(true_pfs[true_pfs>0]))
+    #print("Median PFS among actual PFS", np.median(true_pfs[true_pfs>0]))
+    #print("Max PFS among actual PFS", np.max(true_pfs[true_pfs>0]))
+    #print("Min PFS among actual PFS", np.min(true_pfs[true_pfs>0]))
+    return true_pfs
