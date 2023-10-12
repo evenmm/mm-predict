@@ -327,7 +327,7 @@ def generate_sensitive_Mprotein(Y_t, params, delta_T_values, drug_effect):
     return Y_t * (1-params.pi_r) * np.exp((params.g_s - drug_effect) * delta_T_values)
 
 def get_pi_r_after_time_has_passed(params, measurement_times, treatment_history):
-    Mprotein_values = np.zeros_like(measurement_times)
+    Mprotein_values = np.zeros_like(measurement_times, dtype=float) #without dtype you get ints
     # Adding a small epsilon to Y and pi_r to improve numerical stability
     epsilon_value = 1e-15
     Y_t = params.Y_0# + epsilon_value
@@ -398,14 +398,14 @@ def measure_Mprotein_naive(params, measurement_times, treatment_history):
     return Mprotein_values
     #return params.Y_0 * params.pi_r * np.exp(params.g_r * measurement_times) + params.Y_0 * (1-params.pi_r) * np.exp((params.g_s - params.k_1) * measurement_times)
 
-def generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_local, P, get_expected_theta_from_X, true_omega, true_omega_for_psi, seed, RANDOM_EFFECTS, DIFFERENT_LENGTHS=True, USUBJID=False):
+def generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_local, P, get_expected_theta_from_X, true_omega, true_omega_for_psi, seed, RANDOM_EFFECTS, DIFFERENT_LENGTHS=True, USUBJID=False, simulate_rho_r_dependancy_on_rho_s=False, coef_rho_s_rho_r=0, psi_population=50):
     np.random.seed(seed)
     #X_mean = np.repeat(0,P)
     #X_std = np.repeat(0.5,P)
     #X = np.random.normal(X_mean, X_std, size=(N_patients_local,P))
     X = np.random.uniform(-1, 1, size=(N_patients_local,P))
     X = pd.DataFrame(X, columns = ["Covariate "+str(ii+1) for ii in range(P)])
-    expected_theta_1, expected_theta_2, expected_theta_3 = get_expected_theta_from_X(X)
+    expected_theta_1, expected_theta_2, expected_theta_3 = get_expected_theta_from_X(X, simulate_rho_r_dependancy_on_rho_s, coef_rho_s_rho_r)
     if USUBJID:
         X["USUBJID"] = ["Patient " + x for x in X.index.map(str)]
 
@@ -422,12 +422,12 @@ def generate_simulated_patients(measurement_times, treatment_history, true_sigma
 
     # Set the seed again to get identical observation noise irrespective of random effects or not
     np.random.seed(seed+2)
-    psi_population = 50
-    true_theta_psi = np.random.normal(np.log(psi_population), true_omega_for_psi, size=N_patients_local)
+    #true_theta_psi = np.random.normal(np.log(psi_population), true_omega_for_psi, size=N_patients_local)
     true_rho_s = - np.exp(true_theta_rho_s)
     true_rho_r = np.exp(true_theta_rho_r)
     true_pi_r  = 1/(1+np.exp(-true_theta_pi_r))
-    true_psi = np.exp(true_theta_psi)
+    #true_psi = np.exp(true_theta_psi)
+    true_psi = np.random.uniform(5, 85, size=N_patients_local)
 
     # Set seed again to give patient random Numbers of M protein
     np.random.seed(seed+3)
@@ -490,7 +490,7 @@ def plot_mprotein(patient, title, savename, PLOT_PARAMETERS=False, parameters = 
     ax1.set_title(title)
     ax1.set_xlabel("Days")
     ax1.set_ylabel("Serum M protein (g/L)")
-    ax1.set_ylim(bottom=0, top=80) # Not on server
+    ax1.set_ylim(bottom=0, top=85) # Not on server
     ax1.set_zorder(ax1.get_zorder()+3)
     ax1.legend()
     fig.tight_layout()
@@ -925,7 +925,7 @@ def plot_posterior_local_confidence_intervals(ii, patient, sorted_local_pred_y_v
         latest_cycle_start = int(np.rint( ((CLIP_MPROTEIN_TIME+6*28) - 1) // 28 + 1 ))
     else:
         latest_cycle_start = int(np.rint( (max(measurement_times) - 1) // 28 + 1 ))
-    tick_labels = [1] + [cs for cs in range(6, latest_cycle_start, 6)]
+    tick_labels = [1] + [cs for cs in range(6, latest_cycle_start+1, 6)]
     #step_size = 6
     ##while len(tick_labels) < min(9, latest_cycle_start):
     ##    step_size = step_size - 1
@@ -1359,6 +1359,7 @@ def plot_predictions(args): # Predicts observations of M protein
     return 0 # {"posterior_parameters" : posterior_parameters, "predicted_y_values" : predicted_y_values, "predicted_y_resistant_values" : predicted_y_resistant_values}
 
 def pfs_auc(evaluation_time, patient_dictionary_test, N_patients_test, idata, X_test, model_name, MODEL_RANDOM_EFFECTS, CI_with_obs_noise, SAVEDIR, name, INFERENCE_MODE, MAP_weights, net_list):
+    return # dsicontinued because old relapse definition
     N_patients_test = len(patient_dictionary_test)
 
     recurrence_or_not = np.zeros(N_patients_test)
@@ -1856,6 +1857,47 @@ def get_expected_theta_from_X_one_interaction(X): # One interaction: In rho_s on
     expected_theta_3 = np.reshape(true_alpha[2] + np.dot(X, true_beta_pi_r), (N_patients_local,1))
     return expected_theta_1, expected_theta_2, expected_theta_3
 
+def get_expected_theta_from_X_2_0(X, simulate_rho_r_dependancy_on_rho_s=False, coef_rho_s_rho_r=0): # pi and rho_s
+    # No interactions between covariates. Because we only compare the covariate-less with the linear model, not the BNN or lin+interactions model
+    # Effect of rho_s on rho_r: Yes, because we observe it in the real data
+    # These parameters have covariates with an effect: 
+    # rho_s: No. Because not important to predict. We only predict relapse. 
+    # rho_r: Yes. From covariates 0, 1 and 2
+    # pi_r: Yes. From covariates 0 and 2
+
+    N_patients_local, P = X.shape
+    # These are the true parameters for a patient with all covariates equal to 0:
+    rho_s_population = -0.015
+    rho_r_population = 0.005
+    pi_r_population = 0.01
+    theta_rho_s_population_for_x_equal_to_zero = np.log(-rho_s_population)
+    theta_rho_r_population_for_x_equal_to_zero = np.log(rho_r_population)
+    theta_pi_r_population_for_x_equal_to_zero  = np.log(pi_r_population/(1-pi_r_population))
+
+    true_alpha = np.array([theta_rho_s_population_for_x_equal_to_zero, theta_rho_r_population_for_x_equal_to_zero, theta_pi_r_population_for_x_equal_to_zero])
+    #true_beta_rho_s = np.zeros(P)
+    #true_beta_rho_s[0] = 0
+    #true_beta_rho_s[1] = 0
+    #true_beta_rho_s[2] = 0
+
+    true_beta_rho_r = np.zeros(P)
+    true_beta_rho_r[0] = 0.7
+    true_beta_rho_r[1] = 0.6
+    true_beta_rho_r[2] = 0.2
+
+    true_beta_pi_r = np.zeros(P)
+    true_beta_pi_r[0] = 0.3
+    true_beta_pi_r[1] = 0.4
+    true_beta_pi_r[2] = 0.5
+
+    expected_theta_1 = np.reshape(true_alpha[0] + np.dot(X, np.zeros(P)), (N_patients_local,1))
+    expected_theta_2 = np.reshape(true_alpha[1] + np.dot(X, true_beta_rho_r), (N_patients_local,1))
+    if simulate_rho_r_dependancy_on_rho_s:
+        expected_theta_2 = expected_theta_2 + coef_rho_s_rho_r*expected_theta_1
+    expected_theta_3 = np.reshape(true_alpha[2] + np.dot(X, true_beta_pi_r), (N_patients_local,1))
+    return expected_theta_1, expected_theta_2, expected_theta_3
+
+# Until Oct 10 2023
 def get_expected_theta_from_X_2(X): # pi and rho_s
     N_patients_local, P = X.shape
     # These are the true parameters for a patient with all covariates equal to 0:
@@ -2175,7 +2217,7 @@ def predict_PFS_new(idata, patient_dictionary_full, N_patients_train, CLIP_MPROT
 def get_true_pfs_new(patient_dictionary_test, time_scale=1, M_scale=1): # Regardless of CLIP_MPROTEIN_TIME
     N_patients_test = len(patient_dictionary_test)
     true_pfs = np.repeat(-1, repeats=N_patients_test)
-    for ii, patient in patient_dictionary_test.items():
+    for ii, (patname, patient) in enumerate(patient_dictionary_test.items()):
         mprot = patient.Mprotein_values * M_scale
         times = patient.measurement_times * time_scale
         # Loop through measurements and find first case
@@ -2212,10 +2254,10 @@ def get_true_pfs_new(patient_dictionary_test, time_scale=1, M_scale=1): # Regard
         # development of new bone lesions or soft tissue plasmacytomas; 
         # <...> empty for now
         # or development of hypercalcemia.
-    print("True PFS", true_pfs)
-    print("Average PFS among actual PFS", np.mean(true_pfs[true_pfs>0]))
-    print("Std PFS among actual PFS", np.std(true_pfs[true_pfs>0]))
-    print("Median PFS among actual PFS", np.median(true_pfs[true_pfs>0]))
-    print("Max PFS among actual PFS", np.max(true_pfs[true_pfs>0]))
-    print("Min PFS among actual PFS", np.min(true_pfs[true_pfs>0]))
+    #print("True PFS\n", true_pfs)
+    #print("Average PFS among actual PFS", np.mean(true_pfs[true_pfs>0]))
+    #print("Std PFS among actual PFS", np.std(true_pfs[true_pfs>0]))
+    #print("Median PFS among actual PFS", np.median(true_pfs[true_pfs>0]))
+    #print("Max PFS among actual PFS", np.max(true_pfs[true_pfs>0]))
+    #print("Min PFS among actual PFS", np.min(true_pfs[true_pfs>0]))
     return true_pfs

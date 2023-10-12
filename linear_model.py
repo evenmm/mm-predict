@@ -58,8 +58,7 @@ def linear_model(X, patient_dictionary, name, N_samples=3000, N_tuning=3000, tar
         sigma_obs = pm.HalfNormal("sigma_obs", sigma=1)
 
         # alpha
-        alpha = pm.Normal("alpha",  mu=np.array([np.log(t_max_prior_scale*0.002), np.log(t_max_prior_scale*0.002), np.log(0.5/(1-0.5))]),  sigma=1, shape=3)
-
+        alpha = pm.Normal("alpha", mu=np.array([np.log(t_max_prior_scale*0.015), np.log(t_max_prior_scale*0.005), np.log(0.01/(1-0.01))]), sigma=1, shape=3)
         # beta (with horseshoe priors):
         # Global shrinkage prior
         tau_rho_r = pm.HalfStudentT("tau_rho_r", nu=2, sigma=P0/(P-P0)*sigma_obs/np.sqrt(N_patients))
@@ -120,7 +119,7 @@ def linear_model(X, patient_dictionary, name, N_samples=3000, N_tuning=3000, tar
         pi_r  = pm.Deterministic("pi_r", 1/(1+np.exp(-theta_pi_r)))
 
         if likelihood_model == "Kevins_first":
-            print("Likelihood model is: Kevin's model no. 1: Logistic growth in resistant cells; limited by total cell count")
+            print("Likelihood model in linear_model is: Kevin's model no. 1: Logistic growth in resistant cells; limited by total cell count")
             a_param = 1
             K_param_vector = a_param * psi[group_id]
             #b_param_vector = (a_param - pi_r[group_id]) / (1 - pi_r[group_id])
@@ -169,7 +168,7 @@ def linear_model(X, patient_dictionary, name, N_samples=3000, N_tuning=3000, tar
 
 
         elif likelihood_model == "Kevins_second":
-            print("Likelihood model is: Kevin's model no. 2: Logistic growth in resistant cells; only limited by sensitive cell count")
+            print("Likelihood model in linear_model is: Kevin's model no. 2: Logistic growth in resistant cells; only limited by sensitive cell count")
             ## Kevin's second option (S_zero is psi[group_id])
             #a_param = pm.Gamma("a_param", alpha=2, beta=1)
             #mu_Y = psi[group_id] * (pi_r[group_id] * np.exp(rho_r[group_id]*psi[group_id]*(a_param*t_flat_no_nans - (1 - np.exp(-rho_s[group_id]*t_flat_no_nans))/rho_s[group_id])) + (1-pi_r[group_id])*np.exp(rho_s[group_id]*t_flat_no_nans))
@@ -190,7 +189,7 @@ def linear_model(X, patient_dictionary, name, N_samples=3000, N_tuning=3000, tar
             mu_Y = psi[group_id] * (pi_r[group_id]*np.exp(rho_r[group_id] * psi[group_id] * (1-pi_r[group_id]) * fraction_with_rho_s) + (1-pi_r[group_id])*np.exp(rho_s[group_id] * t_flat_no_nans))
 
         else:
-            print("Likelihood model is: Original model without any growth limit or interaction between subpopulations")
+            print("Likelihood model in linear_model is: Original model without any growth limit or interaction between subpopulations")
             # Original: 
             mu_Y = psi[group_id] * (pi_r[group_id]*np.exp(rho_r[group_id]*t_flat_no_nans) + (1-pi_r[group_id])*np.exp(rho_s[group_id]*t_flat_no_nans))
 
