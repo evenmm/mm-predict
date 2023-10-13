@@ -34,10 +34,10 @@ print("true_sigma_obs", true_sigma_obs)
 print("RANDOM_EFFECTS", RANDOM_EFFECTS)
 #RANDOM_EFFECTS_TEST = False # Not relevant when we have provided M protein
 
-N_patients = 150
+N_patients = 300
 psi_prior="lognormal"
-N_samples = 100
-N_tuning = 100
+N_samples = 1000
+N_tuning = 1000
 ADADELTA = True
 advi_iterations = 60_000
 n_init_advi = 6_000
@@ -51,11 +51,10 @@ PLOT_RESISTANT = True
 P = 5 # Number of covariates
 P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
 y_resolution = 80 # Number of timepoints to evaluate the posterior of y in
+PLOTTING = True
 
-#true_omega = np.array([0.10, 0.05, 0.10])
 #true_omega = np.array([0.5, 0.3, 0.5]) # Good without covariate effects
 true_omega = np.array([0.5, 0.05, 0.05])
-true_omega = np.array([0, 0, 0])
 simulate_rho_r_dependancy_on_rho_s = False
 #coef_rho_s_rho_r = 0.3 if simulate_rho_r_dependancy_on_rho_s else 0.0
 coef_rho_s_rho_r = 0
@@ -85,7 +84,7 @@ if plothowitlooks:
 # Clip time defined first of all, this is the outer loop. 
 # Then we define test, train, fold etc within. 
 pred_window_length = 6*28
-pred_window_starts = range(1+10*28, max_time-pred_window_length+1*28, 1*28)
+pred_window_starts = range(1+10*28, max_time, 1*28)
 for CLIP_MPROTEIN_TIME in pred_window_starts:
     end_of_prediction_horizon = CLIP_MPROTEIN_TIME + pred_window_length
     print("CLIP_MPROTEIN_TIME", CLIP_MPROTEIN_TIME)
@@ -103,6 +102,18 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
     relapse_label = [1 if x > CLIP_MPROTEIN_TIME and x <= end_of_prediction_horizon else 0 for x in true_pfs_complete_patient_dictionary]
     print(pred_window_length, "day window, percentage progressing is", sum(relapse_label) / len(relapse_label), "All:", len(relapse_label), "Progressors", sum(relapse_label))
     assert len(relapse_label) == X.shape[0]
+    stored_fpr_velo = []
+    stored_tpr_velo = []
+    stored_fpr_naive = []
+    stored_tpr_naive = []
+    stored_fpr_LIN = []
+    stored_tpr_LIN = []
+    stored_recall_velo = []
+    stored_precision_velo = []
+    stored_recall_naive = []
+    stored_precision_naive = []
+    stored_recall_LIN = []
+    stored_precision_LIN = []
     # Split into train and test: 
     # - Split into five folds 
     # - Stratified by relapse_label
@@ -254,6 +265,12 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
                 pickle.dump(patient_dictionary_fit, dictfile)
                 dictfile.close()
                 np.savetxt(SAVEDIR+name+"_patient_dictionary"+".csv", [patient.name for _, patient in patient_dictionary_fit.items()], fmt="%s")
+            if name == name_ind:
+                quasi_geweke_test(idata, model_name="none", first=0.1, last=0.5)
+                plot_posterior_traces(idata, SAVEDIR, name_ind, psi_prior, model_name="none")
+            else:
+                quasi_geweke_test(idata, model_name="linear", first=0.1, last=0.5)
+                plot_posterior_traces(idata, SAVEDIR, name_ind, psi_prior, model_name="linear")
             # 4 predictive plots for test, fit plots for train
             #if True:
             try:
@@ -277,7 +294,6 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
                 else:
                     pickle.dump(p_progression_LIN, a_file)
                 a_file.close()
-            PLOTTING = True
             if PLOTTING:
                 plot_fit_and_predictions(idata, patient_dictionary_full, N_patients_train, SAVEDIR, name, y_resolution, CLIP_MPROTEIN_TIME, CI_with_obs_noise=False, PLOT_RESISTANT=False)
             del idata
@@ -352,6 +368,12 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
         fpr_velo, tpr_velo, threshold_velo = metrics.roc_curve(binary_progress_or_not, new_p_progression_velo) #(y_test, preds)
         fpr_naive, tpr_naive, threshold_naive = metrics.roc_curve(binary_progress_or_not, new_p_progression) #(y_test, preds)
         fpr_LIN, tpr_LIN, threshold_LIN = metrics.roc_curve(binary_progress_or_not, new_p_progression_LIN) #(y_test, preds)
+        stored_fpr_velo.append(fpr_velo)
+        stored_tpr_velo.append(tpr_velo)
+        stored_fpr_naive.append(fpr_naive)
+        stored_tpr_naive.append(tpr_naive)
+        stored_fpr_LIN.append(fpr_LIN)
+        stored_tpr_LIN.append(tpr_LIN)
         roc_auc_velo = metrics.auc(fpr_velo, tpr_velo)
         roc_auc_naive = metrics.auc(fpr_naive, tpr_naive)
         roc_auc_LIN = metrics.auc(fpr_LIN, tpr_LIN)
@@ -391,9 +413,13 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
         plt.grid(visible=True)
         plt.title("Cumulative ROC predicting 6 cycles ahead after "+str(pred_window_starts[0])+" to "+str(CLIP_MPROTEIN_TIME)+" days")
         plt.plot([0,1], [0,1], color='grey', linestyle='--', label='_nolegend_')
-        plt.plot(fold_cumul_fpr_velo, fold_cumul_tpr_velo, color=plt.cm.viridis(0.9), label = 'Velocity model (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_velo))
-        plt.plot(fold_cumul_fpr_naive, fold_cumul_tpr_naive, color=plt.cm.viridis(0.6), label = 'No covariates (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_naive))
-        plt.plot(fold_cumul_fpr_LIN, fold_cumul_tpr_LIN, color=plt.cm.viridis(0.3), label = 'With covariates (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_LIN))
+        for fi in range(fold_index+1):
+            plt.plot(stored_fpr_velo[fi], stored_tpr_velo[fi], color=plt.cm.viridis(0.9), alpha=0.3, linestyle="--")
+            plt.plot(stored_fpr_naive[fi], stored_tpr_naive[fi], color=plt.cm.viridis(0.6), alpha=0.3, linestyle="--")
+            plt.plot(stored_fpr_LIN[fi], stored_tpr_LIN[fi], color=plt.cm.viridis(0.3), alpha=0.3, linestyle="--")
+        plt.plot(fold_cumul_fpr_velo, fold_cumul_tpr_velo, color=plt.cm.viridis(0.9), label = 'Velocity model (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_velo), linewidth=3)
+        plt.plot(fold_cumul_fpr_naive, fold_cumul_tpr_naive, color=plt.cm.viridis(0.6), label = 'No covariates (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_naive), linewidth=3)
+        plt.plot(fold_cumul_fpr_LIN, fold_cumul_tpr_LIN, color=plt.cm.viridis(0.3), label = 'With covariates (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_LIN), linewidth=3)
         plt.legend(loc = 'lower right')
         plt.xlim([0,1])
         plt.ylim([0,1])
@@ -424,6 +450,12 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
         precision_velo, recall_velo, threshold_velo = metrics.precision_recall_curve(binary_progress_or_not, new_p_progression_velo) #(y_test, preds)
         precision_naive, recall_naive, threshold_naive = metrics.precision_recall_curve(binary_progress_or_not, new_p_progression) #(y_test, preds)
         precision_LIN, recall_LIN, threshold_LIN = metrics.precision_recall_curve(binary_progress_or_not, new_p_progression_LIN) #(y_test, preds)
+        stored_recall_velo.append(recall_velo)
+        stored_precision_velo.append(precision_velo)
+        stored_recall_naive.append(recall_naive)
+        stored_precision_naive.append(precision_naive)
+        stored_recall_LIN.append(recall_LIN)
+        stored_precision_LIN.append(precision_LIN)
         aupr_velo = metrics.average_precision_score(binary_progress_or_not, new_p_progression_velo)
         aupr_naive = metrics.average_precision_score(binary_progress_or_not, new_p_progression)
         aupr_LIN = metrics.average_precision_score(binary_progress_or_not, new_p_progression_LIN)
@@ -459,9 +491,13 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
         plt.grid(visible=True)
         plt.title("Cumulative PR predicting 6 cycles ahead after "+str(pred_window_starts[0])+" to "+str(CLIP_MPROTEIN_TIME)+" days")
         plt.plot([0,1], [fold_cumul_proportion_progressions, fold_cumul_proportion_progressions], color='grey', linestyle='--', label='_nolegend_')
-        plt.plot(fold_cumul_recall_velo, fold_cumul_precision_velo, color=plt.cm.viridis(0.9), label = 'Velocity model (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_velo))
-        plt.plot(fold_cumul_recall_naive, fold_cumul_precision_naive, color=plt.cm.viridis(0.6), label = 'No covariates (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_naive))
-        plt.plot(fold_cumul_recall_LIN, fold_cumul_precision_LIN, color=plt.cm.viridis(0.3), label = 'With covariates (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_LIN))
+        for fi in range(fold_index+1):
+            plt.plot(stored_recall_velo[fi], stored_precision_velo[fi], color=plt.cm.viridis(0.9), alpha=0.3, linestyle="--")
+            plt.plot(stored_recall_naive[fi], stored_precision_naive[fi], color=plt.cm.viridis(0.6), alpha=0.3, linestyle="--")
+            plt.plot(stored_recall_LIN[fi], stored_precision_LIN[fi], color=plt.cm.viridis(0.3), alpha=0.3, linestyle="--")
+        plt.plot(fold_cumul_recall_velo, fold_cumul_precision_velo, color=plt.cm.viridis(0.9), label = 'Velocity model (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_velo), linewidth=3)
+        plt.plot(fold_cumul_recall_naive, fold_cumul_precision_naive, color=plt.cm.viridis(0.6), label = 'No covariates (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_naive), linewidth=3)
+        plt.plot(fold_cumul_recall_LIN, fold_cumul_precision_LIN, color=plt.cm.viridis(0.3), label = 'With covariates (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_LIN), linewidth=3)
         plt.legend(loc = 'lower right')
         plt.xlim([0,1])
         plt.ylim([0,1])
@@ -479,8 +515,6 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
         gc.collect()
 
         """
-        quasi_geweke_test(idata_ind, model_name=model_name, first=0.1, last=0.5)
-        plot_posterior_traces(idata_ind, SAVEDIR, name_ind, psi_prior, model_name=model_name)
 
         ## Generate test patients
         #N_patients_test = 50

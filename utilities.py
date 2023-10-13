@@ -66,6 +66,9 @@ rs = RandomState(MT19937(SeedSequence(123456789)))
 # 22.03.22 treatment in terms of different drugs
 
 # In drug dictionary, key is drug name and value is drug id
+treatment_id_to_drugs_dictionary = {}
+drug_dictionary_OSLO = {}
+drug_dictionary = {}
 #drug_dictionary_OSLO = np.load("./binaries_and_pickles/drug_dictionary_OSLO.npy", allow_pickle=True).item()
 #drug_dictionary_COMMPASS = np.load("./binaries_and_pickles/drug_dictionary_COMMPASS.npy", allow_pickle=True).item()
 #for key, value in drug_dictionary_COMMPASS.items():
@@ -987,20 +990,6 @@ def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model_name, patientwi
         az.plot_autocorr(idata, var_names=["sigma_obs"])
         plt.close()
 
-        """
-        az.plot_trace(idata, var_names=('alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma_obs'), combined=True)
-        plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-_group_parameters.pdf")
-        plt.close()
-        az.plot_trace(idata, var_names=('beta_rho_s'), lines=[('beta_rho_s', {}, [0])], combined=False, compact=False)
-        plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_beta_rho_s.pdf")
-        plt.close()
-        az.plot_forest(idata, var_names=["beta_rho_s"], combined=True, hdi_prob=0.95, r_hat=True)
-        plt.tight_layout()
-        plt.savefig(SAVEDIR+name+"-forest_beta_rho_s.pdf")
-        plt.close()
-        """
         az.plot_trace(idata, var_names=('alpha', 'beta_rho_r', 'beta_pi_r', 'omega', 'sigma_obs'), combined=True)
         plt.tight_layout()
         plt.savefig(SAVEDIR+name+"-_group_parameters.pdf")
@@ -1010,31 +999,33 @@ def plot_posterior_traces(idata, SAVEDIR, name, psi_prior, model_name, patientwi
         az.plot_trace(idata, var_names=('beta_rho_r'), lines=[('beta_rho_r', {}, [0])], combined=False, compact=False)
         plt.tight_layout()
         plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_beta_rho_r.pdf")
-        plt.show()
+        #plt.show()
         plt.close()
 
         # Combined means combine the chains into one posterior. Compact means split into different subplots
         az.plot_trace(idata, var_names=('beta_pi_r'), lines=[('beta_pi_r', {}, [0])], combined=False, compact=False)
         plt.tight_layout()
         plt.savefig(SAVEDIR+name+"-plot_posterior_uncompact_beta_pi_r.pdf")
-        plt.show()
+        #plt.show()
         plt.close()
 
         az.plot_forest(idata, var_names=["beta_rho_r"], combined=True, hdi_prob=0.95, r_hat=True)
         plt.tight_layout()
         plt.savefig(SAVEDIR+name+"-forest_beta_rho_r.pdf")
-        plt.show()
+        #plt.show()
         plt.close()
         az.plot_forest(idata, var_names=["beta_pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
         plt.tight_layout()
         plt.savefig(SAVEDIR+name+"-forest_beta_pi_r.pdf")
-        plt.show()
+        #plt.show()
         plt.close()
+        """
         az.plot_forest(idata, var_names=["pi_r"], combined=True, hdi_prob=0.95, r_hat=True)
         plt.savefig(SAVEDIR+name+"-forest_pi_r.pdf")
         plt.tight_layout()
-        plt.show()
+        #plt.show()
         plt.close()
+        """
     elif model_name == "BNN":
         if "rho_s" in net_list:
             # Plot weights in_1 rho_s
@@ -1241,7 +1232,7 @@ def plot_predictions(args): # Predicts observations of M protein
             alpha = np.ravel(idata.posterior['alpha'][ch,sa])
 
             if model_name == "linear": 
-                this_beta_rho_s = np.ravel(idata.posterior['beta_rho_s'][ch,sa])
+                #this_beta_rho_s = np.ravel(idata.posterior['beta_rho_s'][ch,sa])
                 this_beta_rho_r = np.ravel(idata.posterior['beta_rho_r'][ch,sa])
                 this_beta_pi_r = np.ravel(idata.posterior['beta_pi_r'][ch,sa])
             elif model_name == "BNN": 
@@ -1308,7 +1299,8 @@ def plot_predictions(args): # Predicts observations of M protein
             for ee in range(N_rand_eff_pred):
                 if model_name == "linear":
                     #if MODEL_RANDOM_EFFECTS: 
-                    predicted_theta_1 = np.random.normal(alpha[0] + np.dot(X_test.iloc[ii,:], this_beta_rho_s), omega[0])
+                    #predicted_theta_1 = np.random.normal(alpha[0] + np.dot(X_test.iloc[ii,:], this_beta_rho_s), omega[0])
+                    predicted_theta_1 = np.random.normal(alpha[0], omega[0])
                     predicted_theta_2 = np.random.normal(alpha[1] + np.dot(X_test.iloc[ii,:], this_beta_rho_r), omega[1])
                     predicted_theta_3 = np.random.normal(alpha[2] + np.dot(X_test.iloc[ii,:], this_beta_pi_r), omega[2])
                     #else: 
@@ -1793,8 +1785,11 @@ def quasi_geweke_test(idata, model_name, first=0.1, last=0.5, intervals=20):
     print("Running Geweke test...")
     convergence_flag = True
     if model_name == "linear":
-        var_names = ['alpha', 'beta_rho_s', 'beta_rho_r', 'beta_pi_r', 'omega', 'theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r']
+        # 'beta_rho_s'
+        var_names = ['alpha', 'beta_rho_r', 'beta_pi_r', 'omega', 'theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r']
     elif model_name == "BNN":
+        var_names = ['alpha', 'omega', 'theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r']
+    else:
         var_names = ['alpha', 'omega', 'theta_rho_s', 'theta_rho_r', 'theta_pi_r', 'rho_s', 'rho_r', 'pi_r']
     for var_name in var_names:
         sample_shape = idata.posterior[var_name].shape
