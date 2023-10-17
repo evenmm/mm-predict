@@ -8,6 +8,13 @@ import gc
 # Fit individual and linear models
 # Compare AUC
 
+# Workflow 
+# 1 Generate simulated patients 
+# 2 Set the clip time
+# 3 split into five train/test partitions, stratified by relapse_label
+# 4 Fit individual and linear models
+# 5 Calculate p_progression and plot AUC and AUPR
+
 # Initialize random number generator
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
@@ -16,25 +23,9 @@ print(f"Running on PyMC v{pm.__version__}")
 #SAVEDIR = "/data/evenmm/plots/"
 SAVEDIR = "./plots/Bayesian_estimates_simdata_comparison/"
 #SAVEDIR = "./"
-
-# Settings
 script_index = int(sys.argv[1]) 
-if int(script_index % 3) == 0:
-    true_sigma_obs = 0
-elif int(script_index % 3) == 1:
-    true_sigma_obs = 1
-elif int(script_index % 3) == 2:
-    true_sigma_obs = 2.5
 
-if script_index >= 3:
-    RANDOM_EFFECTS = True
-else: 
-    RANDOM_EFFECTS = False
-print("true_sigma_obs", true_sigma_obs)
-print("RANDOM_EFFECTS", RANDOM_EFFECTS)
-#RANDOM_EFFECTS_TEST = False # Not relevant when we have provided M protein
-
-N_patients = 300
+# Inference settings
 psi_prior="lognormal"
 N_samples = 1000
 N_tuning = 1000
@@ -48,11 +39,20 @@ MODEL_RANDOM_EFFECTS = True
 target_accept = 0.99
 CI_with_obs_noise = False
 PLOT_RESISTANT = True
+y_resolution = 80 # Number of timepoints to evaluate the posterior of y in
+PLOTTING = False
+
+# Data generation settings
+N_patients = 300
+crop_after_pfs = False
+true_sigma_obs = 1
+RANDOM_EFFECTS = True
+print("true_sigma_obs", true_sigma_obs)
+print("RANDOM_EFFECTS", RANDOM_EFFECTS)
+#RANDOM_EFFECTS_TEST = False # Not relevant when we have provided M protein
+
 P = 5 # Number of covariates
 P0 = int(P / 2) # A guess of the true number of nonzero parameters is needed for defining the global shrinkage parameter
-y_resolution = 80 # Number of timepoints to evaluate the posterior of y in
-PLOTTING = True
-
 #true_omega = np.array([0.5, 0.3, 0.5]) # Good without covariate effects
 true_omega = np.array([0.5, 0.05, 0.05])
 simulate_rho_r_dependancy_on_rho_s = False
@@ -69,10 +69,10 @@ M_number_of_measurements = len(measurement_times)
 treatment_history = np.array([Treatment(start=0, end=measurement_times[-1], id=1)])
 DIFFERENT_LENGTHS = False
 
-# Generate simulated patients 
+# 1 Generate simulated patients 
 # Put a USUBJID row in X with USUBJID=True
 # Removed. Uniform. But backwards compatibility true_omega_for_psi = 0 #0.3 or 0.2
-X, patient_dictionary_complete, parameter_dictionary, expected_theta_1, true_theta_rho_s, true_rho_s = generate_simulated_patients(deepcopy(measurement_times), treatment_history, true_sigma_obs, N_patients, P, get_expected_theta_from_X_2_0, true_omega, 0, seed=42, RANDOM_EFFECTS=RANDOM_EFFECTS, USUBJID=True, simulate_rho_r_dependancy_on_rho_s=simulate_rho_r_dependancy_on_rho_s, coef_rho_s_rho_r=coef_rho_s_rho_r, DIFFERENT_LENGTHS=DIFFERENT_LENGTHS)
+X, patient_dictionary_complete, parameter_dictionary, expected_theta_1, true_theta_rho_s, true_rho_s = generate_simulated_patients(deepcopy(measurement_times), treatment_history, true_sigma_obs, N_patients, P, get_expected_theta_from_X_2_0, true_omega, 0, seed=42, RANDOM_EFFECTS=RANDOM_EFFECTS, USUBJID=True, simulate_rho_r_dependancy_on_rho_s=simulate_rho_r_dependancy_on_rho_s, coef_rho_s_rho_r=coef_rho_s_rho_r, DIFFERENT_LENGTHS=DIFFERENT_LENGTHS, crop_after_pfs=crop_after_pfs)
 
 plothowitlooks = False
 if plothowitlooks:
@@ -81,6 +81,7 @@ if plothowitlooks:
         patient = patient_dictionary_complete[pat_name]
         plot_mprotein(patient, pat_name, SAVEDIR+pat_name, PLOT_PARAMETERS=True, parameters=params, PLOT_lightchains=False, plot_pfs=False, plot_KapLam=False)
 
+# 2 Set the clip time
 # Clip time defined first of all, this is the outer loop. 
 # Then we define test, train, fold etc within. 
 pred_window_length = 6*28
@@ -102,6 +103,7 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
     relapse_label = [1 if x > CLIP_MPROTEIN_TIME and x <= end_of_prediction_horizon else 0 for x in true_pfs_complete_patient_dictionary]
     print(pred_window_length, "day window, percentage progressing is", sum(relapse_label) / len(relapse_label), "All:", len(relapse_label), "Progressors", sum(relapse_label))
     assert len(relapse_label) == X.shape[0]
+    # Store the fpr, tpr, precision and recall for each fold, found independently
     stored_fpr_velo = []
     stored_tpr_velo = []
     stored_fpr_naive = []
@@ -114,15 +116,19 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
     stored_precision_naive = []
     stored_recall_LIN = []
     stored_precision_LIN = []
+    # Store the true and predicted relapse times for each fold, cumulative prediction
+    fold_cumul_binary_progress_or_not = np.array([])
+    fold_cumul_new_p_progression_velo = np.array([])
+    fold_cumul_new_p_progression = np.array([])
+    fold_cumul_new_p_progression_LIN = np.array([])
+    # 3 split into five train/test partitions, stratified by relapse_label
     # Split into train and test: 
     # - Split into five folds 
     # - Stratified by relapse_label
     from sklearn.model_selection import StratifiedKFold
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
     for fold_index, (train_index, test_index) in enumerate(skf.split(X, relapse_label)):
-        print(f"Fold {fold_index}:")
-        print(f"  Train: index={train_index}")
-        print(f"  Test:  index={test_index}")
+        print(f"\nFold {fold_index}:")
         X_train = X.iloc[train_index]
         X_test = X.iloc[test_index]
 
@@ -144,12 +150,6 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
         patient_dictionary_full = deepcopy(patient_dictionary)
         for ii in range(len(patient_dictionary_test)):
             patient_dictionary_full[ii+N_patients_train] = deepcopy(patient_dictionary_test[ii])
-
-        # Store the true and predicted relapse times for each fold
-        fold_cumul_binary_progress_or_not = np.array([])
-        fold_cumul_new_p_progression_velo = np.array([])
-        fold_cumul_new_p_progression = np.array([])
-        fold_cumul_new_p_progression_LIN = np.array([])
 
         ##############
         # Scaling to keep numerics ok
@@ -222,13 +222,14 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
             patient_dictionary_fit[ii+N_patients_train] = clip_patient
         assert len(patient_dictionary_full) == len(patient_dictionary_fit)
         assert X_full.shape[0] == len(patient_dictionary_fit)
-        name_lin = "simdata_partial_Mprot_lin_"+str(script_index)+"_M_"+str(M_number_of_measurements)+"_P_"+str(P)+"_N_pax_"+str(N_patients)+"_N_sampl_"+str(N_samples)+"_N_tune_"+str(N_tuning)+"_CLIP_"+str(CLIP_MPROTEIN_TIME)+"_win_"+str(pred_window_length)+"_fold_"+str(fold_index)
-        name_ind = "simdata_partial_Mprot_ind_"+str(script_index)+"_M_"+str(M_number_of_measurements)+"_P_"+str(P)+"_N_pax_"+str(N_patients)+"_N_sampl_"+str(N_samples)+"_N_tune_"+str(N_tuning)+"_CLIP_"+str(CLIP_MPROTEIN_TIME)+"_win_"+str(pred_window_length)+"_fold_"+str(fold_index)
+        name_lin = "simdata_partial_Mprot_lin_M_"+str(M_number_of_measurements)+"_P_"+str(P)+"_N_pax_"+str(N_patients)+"_N_sampl_"+str(N_samples)+"_N_tune_"+str(N_tuning)+"_CLIP_"+str(CLIP_MPROTEIN_TIME)+"_win_"+str(pred_window_length)+"_fold_"+str(fold_index)
+        name_ind = "simdata_partial_Mprot_ind_M_"+str(M_number_of_measurements)+"_P_"+str(P)+"_N_pax_"+str(N_patients)+"_N_sampl_"+str(N_samples)+"_N_tune_"+str(N_tuning)+"_CLIP_"+str(CLIP_MPROTEIN_TIME)+"_win_"+str(pred_window_length)+"_fold_"+str(fold_index)
         # Visualize parameter dependancy on covariates 
         #plot_parameter_dependency_on_covariates(SAVEDIR, name, X, expected_theta_1, true_theta_rho_s, true_rho_s, expected_theta_2, true_theta_rho_r, true_rho_r, expected_theta_3, true_theta_pi_r, true_pi_r)
         #plot_parameter_dependency_on_covariates(SAVEDIR, name_lin, X, expected_theta_1, true_theta_rho_s, true_rho_s)
         ind_model = individual_model(patient_dictionary_fit, name_ind, psi_prior=psi_prior, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION, model_rho_r_dependancy_on_rho_s=model_rho_r_dependancy_on_rho_s)
         lin_model = linear_model(X_full, patient_dictionary_fit, name_lin, psi_prior=psi_prior, FUNNEL_REPARAMETRIZATION=FUNNEL_REPARAMETRIZATION, model_rho_r_dependancy_on_rho_s=model_rho_r_dependancy_on_rho_s)
+        # 4 Fit individual and linear models
         for model, name in [(ind_model, name_ind), (lin_model, name_lin)]:
             try:
                 picklefile = open(SAVEDIR+name+"_idata_pickle", "rb")
@@ -267,10 +268,12 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
                 np.savetxt(SAVEDIR+name+"_patient_dictionary"+".csv", [patient.name for _, patient in patient_dictionary_fit.items()], fmt="%s")
             if name == name_ind:
                 quasi_geweke_test(idata, model_name="none", first=0.1, last=0.5)
-                plot_posterior_traces(idata, SAVEDIR, name_ind, psi_prior, model_name="none")
+                if PLOTTING:
+                    plot_posterior_traces(idata, SAVEDIR, name_ind, psi_prior, model_name="none")
             else:
                 quasi_geweke_test(idata, model_name="linear", first=0.1, last=0.5)
-                plot_posterior_traces(idata, SAVEDIR, name_ind, psi_prior, model_name="linear")
+                if PLOTTING:
+                    plot_posterior_traces(idata, SAVEDIR, name_ind, psi_prior, model_name="linear")
             # 4 predictive plots for test, fit plots for train
             #if True:
             try:
@@ -377,10 +380,6 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
         roc_auc_velo = metrics.auc(fpr_velo, tpr_velo)
         roc_auc_naive = metrics.auc(fpr_naive, tpr_naive)
         roc_auc_LIN = metrics.auc(fpr_LIN, tpr_LIN)
-        print("threshold_naive:\n", threshold_naive)
-        print("fpr_naive:\n", fpr_naive)
-        print("tpr_naive:\n", tpr_naive)
-        print("roc_auc_naive:\n", roc_auc_naive)
         plt.figure()
         plt.grid(visible=True)
         plt.title("ROC curve from day "+str(CLIP_MPROTEIN_TIME)+" to "+str(end_of_prediction_horizon))
@@ -414,12 +413,12 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
         plt.title("Cumulative ROC predicting 6 cycles ahead after "+str(pred_window_starts[0])+" to "+str(CLIP_MPROTEIN_TIME)+" days")
         plt.plot([0,1], [0,1], color='grey', linestyle='--', label='_nolegend_')
         for fi in range(fold_index+1):
-            plt.plot(stored_fpr_velo[fi], stored_tpr_velo[fi], color=plt.cm.viridis(0.9), alpha=0.3, linestyle="--")
-            plt.plot(stored_fpr_naive[fi], stored_tpr_naive[fi], color=plt.cm.viridis(0.6), alpha=0.3, linestyle="--")
-            plt.plot(stored_fpr_LIN[fi], stored_tpr_LIN[fi], color=plt.cm.viridis(0.3), alpha=0.3, linestyle="--")
+            plt.plot(stored_fpr_velo[fi], stored_tpr_velo[fi], color=plt.cm.viridis(0.9), alpha=0.5, linestyle="--")
+            plt.plot(stored_fpr_naive[fi], stored_tpr_naive[fi], color=plt.cm.viridis(0.6), alpha=0.5, linestyle="--")
+            plt.plot(stored_fpr_LIN[fi], stored_tpr_LIN[fi], color=plt.cm.viridis(0.3), alpha=0.5, linestyle="--")
         plt.plot(fold_cumul_fpr_velo, fold_cumul_tpr_velo, color=plt.cm.viridis(0.9), label = 'Velocity model (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_velo), linewidth=3)
-        plt.plot(fold_cumul_fpr_naive, fold_cumul_tpr_naive, color=plt.cm.viridis(0.6), label = 'No covariates (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_naive), linewidth=3)
-        plt.plot(fold_cumul_fpr_LIN, fold_cumul_tpr_LIN, color=plt.cm.viridis(0.3), label = 'With covariates (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_LIN), linewidth=3)
+        plt.plot(fold_cumul_fpr_naive, fold_cumul_tpr_naive, color=plt.cm.viridis(0.6), label = 'NLME (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_naive), linewidth=3)
+        plt.plot(fold_cumul_fpr_LIN, fold_cumul_tpr_LIN, color=plt.cm.viridis(0.3), label = 'NLME with covariates (AUC = %0.2f)' % np.mean(fold_cumul_roc_auc_LIN), linewidth=3)
         plt.legend(loc = 'lower right')
         plt.xlim([0,1])
         plt.ylim([0,1])
@@ -492,12 +491,12 @@ for CLIP_MPROTEIN_TIME in pred_window_starts:
         plt.title("Cumulative PR predicting 6 cycles ahead after "+str(pred_window_starts[0])+" to "+str(CLIP_MPROTEIN_TIME)+" days")
         plt.plot([0,1], [fold_cumul_proportion_progressions, fold_cumul_proportion_progressions], color='grey', linestyle='--', label='_nolegend_')
         for fi in range(fold_index+1):
-            plt.plot(stored_recall_velo[fi], stored_precision_velo[fi], color=plt.cm.viridis(0.9), alpha=0.3, linestyle="--")
-            plt.plot(stored_recall_naive[fi], stored_precision_naive[fi], color=plt.cm.viridis(0.6), alpha=0.3, linestyle="--")
-            plt.plot(stored_recall_LIN[fi], stored_precision_LIN[fi], color=plt.cm.viridis(0.3), alpha=0.3, linestyle="--")
+            plt.plot(stored_recall_velo[fi], stored_precision_velo[fi], color=plt.cm.viridis(0.9), alpha=0.5, linestyle="--")
+            plt.plot(stored_recall_naive[fi], stored_precision_naive[fi], color=plt.cm.viridis(0.6), alpha=0.5, linestyle="--")
+            plt.plot(stored_recall_LIN[fi], stored_precision_LIN[fi], color=plt.cm.viridis(0.3), alpha=0.5, linestyle="--")
         plt.plot(fold_cumul_recall_velo, fold_cumul_precision_velo, color=plt.cm.viridis(0.9), label = 'Velocity model (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_velo), linewidth=3)
-        plt.plot(fold_cumul_recall_naive, fold_cumul_precision_naive, color=plt.cm.viridis(0.6), label = 'No covariates (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_naive), linewidth=3)
-        plt.plot(fold_cumul_recall_LIN, fold_cumul_precision_LIN, color=plt.cm.viridis(0.3), label = 'With covariates (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_LIN), linewidth=3)
+        plt.plot(fold_cumul_recall_naive, fold_cumul_precision_naive, color=plt.cm.viridis(0.6), label = 'NLME (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_naive), linewidth=3)
+        plt.plot(fold_cumul_recall_LIN, fold_cumul_precision_LIN, color=plt.cm.viridis(0.3), label = 'NLME with covariates (AUPR = %0.2f)' % np.mean(fold_cumul_aupr_LIN), linewidth=3)
         plt.legend(loc = 'lower right')
         plt.xlim([0,1])
         plt.ylim([0,1])

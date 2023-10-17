@@ -401,7 +401,7 @@ def measure_Mprotein_naive(params, measurement_times, treatment_history):
     return Mprotein_values
     #return params.Y_0 * params.pi_r * np.exp(params.g_r * measurement_times) + params.Y_0 * (1-params.pi_r) * np.exp((params.g_s - params.k_1) * measurement_times)
 
-def generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_local, P, get_expected_theta_from_X, true_omega, true_omega_for_psi, seed, RANDOM_EFFECTS, DIFFERENT_LENGTHS=True, USUBJID=False, simulate_rho_r_dependancy_on_rho_s=False, coef_rho_s_rho_r=0, psi_population=50):
+def generate_simulated_patients(measurement_times, treatment_history, true_sigma_obs, N_patients_local, P, get_expected_theta_from_X, true_omega, true_omega_for_psi, seed, RANDOM_EFFECTS, DIFFERENT_LENGTHS=True, USUBJID=False, simulate_rho_r_dependancy_on_rho_s=False, coef_rho_s_rho_r=0, psi_population=50, crop_after_pfs=False):
     np.random.seed(seed)
     #X_mean = np.repeat(0,P)
     #X_std = np.repeat(0.5,P)
@@ -454,6 +454,13 @@ def generate_simulated_patients(measurement_times, treatment_history, true_sigma
         #patient_dictionary[training_instance_id] = this_patient
         parameter_dictionary[training_instance_id] = these_parameters
         #plot_true_mprotein_with_observations_and_treatments_and_estimate(these_parameters, this_patient, estimated_parameters=[], PLOT_ESTIMATES=False, plot_title=str(training_instance_id), savename="./plots/Bayes_simulated_data/"+str(training_instance_id)
+    if crop_after_pfs:
+        true_pfs_complete_patient_dictionary = get_true_pfs_new(patient_dictionary, time_scale=1, M_scale=1)
+        # Crop measurements afer progression: 
+        for ii, patient in enumerate(patient_dictionary.values()):
+            if true_pfs_complete_patient_dictionary[ii] > 0:
+                patient.Mprotein_values = patient.Mprotein_values[patient.measurement_times <= true_pfs_complete_patient_dictionary[ii]] # + 2*28]
+                patient.measurement_times = patient.measurement_times[patient.measurement_times <= true_pfs_complete_patient_dictionary[ii]] # + 2*28]
     return X, patient_dictionary, parameter_dictionary, expected_theta_1, true_theta_rho_s, true_rho_s
     #return X, patient_dictionary, parameter_dictionary, expected_theta_1, true_theta_rho_s, true_rho_s, expected_theta_2, true_theta_rho_r, true_rho_r, expected_theta_3, true_theta_pi_r, true_pi_r
 
