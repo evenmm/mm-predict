@@ -425,12 +425,11 @@ def generate_simulated_patients(measurement_times, treatment_history, true_sigma
 
     # Set the seed again to get identical observation noise irrespective of random effects or not
     np.random.seed(seed+2)
-    #true_theta_psi = np.random.normal(np.log(psi_population), true_omega_for_psi, size=N_patients_local)
+    true_theta_psi = np.random.normal(np.log(psi_population), true_omega_for_psi, size=N_patients_local)
     true_rho_s = - np.exp(true_theta_rho_s)
     true_rho_r = np.exp(true_theta_rho_r)
     true_pi_r  = 1/(1+np.exp(-true_theta_pi_r))
-    #true_psi = np.exp(true_theta_psi)
-    true_psi = np.random.uniform(5, 85, size=N_patients_local)
+    true_psi = np.exp(true_theta_psi)
 
     # Set seed again to give patient random Numbers of M protein
     np.random.seed(seed+3)
